@@ -1,0 +1,21 @@
+# Dependencies
+/vendor/
+/node_modules/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Logs & local config
+*.log
+phpcs.xml
+.phpcs.xml
+
+# Build artifacts
+/build/
+/dist/
+*.zip

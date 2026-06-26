@@ -1,0 +1,167 @@
+/* Link Guardian — admin styles */
+
+.link-guardian-wrap .lg-grid {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 20px;
+	align-items: flex-start;
+	margin-top: 16px;
+}
+
+.link-guardian-wrap .lg-card {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 6px;
+	padding: 16px 20px;
+	box-shadow: 0 1px 1px rgba( 0, 0, 0, 0.04 );
+	flex: 1 1 260px;
+	max-width: 340px;
+}
+
+.link-guardian-wrap .lg-card--wide {
+	flex: 3 1 540px;
+	max-width: none;
+}
+
+.link-guardian-wrap .lg-card h2 {
+	margin-top: 0;
+}
+
+.link-guardian-wrap .lg-card label {
+	display: block;
+	font-weight: 600;
+	margin-bottom: 4px;
+}
+
+.link-guardian-wrap .lg-card input[type="text"],
+.link-guardian-wrap .lg-card input[type="search"],
+.link-guardian-wrap .lg-card select {
+	width: 100%;
+}
+
+/* Badges + status dots */
+.lg-badge {
+	display: inline-block;
+	padding: 1px 8px;
+	border-radius: 10px;
+	font-size: 11px;
+	background: #f0f0f1;
+	color: #50575e;
+}
+
+.lg-badge--auto {
+	background: #e6f4ea;
+	color: #1e7e34;
+}
+
+.lg-dot {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	margin-right: 6px;
+	vertical-align: middle;
+}
+
+.lg-dot--on {
+	background: #2ea44f;
+}
+
+.lg-dot--off {
+	background: #d63638;
+}
+
+.lg-actions form {
+	margin: 0;
+}
+
+.lg-link-danger {
+	color: #d63638 !important;
+}
+
+/* Scanner progress */
+.lg-progress {
+	max-width: 640px;
+	margin: 12px 0;
+}
+
+.lg-progress__bar {
+	height: 18px;
+	background: #f0f0f1;
+	border-radius: 9px;
+	overflow: hidden;
+}
+
+.lg-progress__bar span {
+	display: block;
+	height: 100%;
+	width: 0;
+	background: linear-gradient( 90deg, #2271b1, #72aee6 );
+	transition: width 0.25s ease;
+}
+
+.lg-progress__label {
+	margin: 8px 2px 0;
+	color: #50575e;
+}
+
+/* Audit page */
+.lg-summary {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	margin: 16px 0;
+}
+
+.lg-pill {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 5px;
+	padding: 6px 12px;
+	border-radius: 16px;
+	background: #f0f0f1;
+	color: #50575e;
+	font-size: 13px;
+}
+
+.lg-pill strong {
+	font-size: 15px;
+	color: #1d2327;
+}
+
+.lg-pill--good { background: #e6f4ea; }
+.lg-pill--good strong { color: #1e7e34; }
+.lg-pill--warn { background: #fcf3e3; }
+.lg-pill--warn strong { color: #bd8600; }
+.lg-pill--bad  { background: #fbeaea; }
+.lg-pill--bad strong { color: #d63638; }
+
+#lg-audit-body .lg-card {
+	max-width: 820px;
+	margin-bottom: 16px;
+}
+
+.lg-list {
+	margin: 0;
+}
+
+.lg-list li {
+	padding: 6px 0;
+	border-bottom: 1px solid #f0f0f1;
+	line-height: 1.8;
+}
+
+.lg-list li:last-child {
+	border-bottom: 0;
+}
+
+.lg-arrow {
+	color: #2271b1;
+	font-weight: 700;
+	padding: 0 2px;
+}
+
+.lg-muted {
+	color: #787c82;
+	font-size: 12px;
+}

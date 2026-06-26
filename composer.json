@@ -1,0 +1,26 @@
+{
+	"name": "your-name/link-guardian",
+	"description": "Keep internal links healthy: auto-redirect and auto link-fix on slug change, a broken-link scanner, and a redirect audit REST API.",
+	"type": "wordpress-plugin",
+	"keywords": ["wordpress", "plugin", "redirects", "broken-links", "seo"],
+	"homepage": "https://github.com/your-name/link-guardian",
+	"license": "GPL-2.0-or-later",
+	"require": {
+		"php": ">=7.4"
+	},
+	"require-dev": {
+		"squizlabs/php_codesniffer": "^3.13",
+		"wp-coding-standards/wpcs": "^3.1",
+		"dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+		"phpcompatibility/php-compatibility": "^9.3"
+	},
+	"scripts": {
+		"lint": "phpcs",
+		"lint:fix": "phpcbf"
+	},
+	"config": {
+		"allow-plugins": {
+			"dealerdirect/phpcodesniffer-composer-installer": true
+		}
+	}
+}

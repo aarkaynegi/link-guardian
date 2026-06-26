@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<ruleset name="Link Guardian">
+	<description>Coding standards for the Link Guardian plugin.</description>
+
+	<file>.</file>
+
+	<arg name="extensions" value="php"/>
+	<arg name="basepath" value="."/>
+	<arg name="colors"/>
+	<arg value="ps"/>
+
+	<exclude-pattern>*/vendor/*</exclude-pattern>
+	<exclude-pattern>*/node_modules/*</exclude-pattern>
+
+	<!-- Supported platform floor. -->
+	<config name="minimum_wp_version" value="6.2"/>
+	<config name="testVersion" value="7.4-"/>
+
+	<rule ref="WordPress">
+		<!--
+		  This plugin owns a custom table ({prefix}lg_redirects). There is no core
+		  API for it, and redirect/audit lookups are intentionally realtime, so the
+		  generic direct-query / caching sniffs do not apply. Every query still uses
+		  $wpdb->prepare() or format-array CRUD; only safe table names are interpolated.
+		-->
+		<exclude name="WordPress.DB.DirectDatabaseQuery.DirectQuery"/>
+		<exclude name="WordPress.DB.DirectDatabaseQuery.NoCaching"/>
+		<exclude name="WordPress.DB.DirectDatabaseQuery.SchemaChange"/>
+	</rule>
+
+	<!-- Plugin text domain. -->
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="link-guardian"/>
+			</property>
+		</properties>
+	</rule>
+
+	<!-- Global prefixes. -->
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="link_guardian"/>
+				<element value="Link_Guardian"/>
+				<element value="LINK_GUARDIAN"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>
