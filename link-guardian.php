@@ -20,7 +20,7 @@
 defined( 'ABSPATH' ) || exit;
 
 define( 'LINK_GUARDIAN_VERSION', '1.0.0' );
-define( 'LINK_GUARDIAN_DB_VERSION', '1' );
+define( 'LINK_GUARDIAN_DB_VERSION', '2' );
 define( 'LINK_GUARDIAN_FILE', __FILE__ );
 define( 'LINK_GUARDIAN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'LINK_GUARDIAN_URL', plugin_dir_url( __FILE__ ) );

@@ -191,6 +191,57 @@
 	$( document ).on( 'click', '#lg-scan-start', startScan );
 	$( document ).on( 'click', '#lg-audit-run', runAudit );
 
+	// Adapt the Add form to the selected match type (exact / wildcard / regex).
+	var MATCH_HINTS = {
+		exact: {
+			src: '/old-url',
+			tgt: '/new-url or https://example.com/page',
+			help: 'Exact match: redirect one specific URL to another.'
+		},
+		wildcard: {
+			src: '/old-section/*',
+			tgt: '/new-section/*',
+			help: 'Wildcard: * matches anything. Put * in the target to reuse what * captured (e.g. /blog/* → /news/*).'
+		},
+		regex: {
+			src: '^/shop/(\\d+)$',
+			tgt: '/products/$1',
+			help: 'Regex: full pattern matching. Use $1, $2… in the target for capture groups. Patterns run with a bounded backtrack limit.'
+		}
+	};
+
+	function updateMatchUi() {
+		var sel = document.getElementById( 'lg-match-type' );
+		if ( ! sel ) {
+			return;
+		}
+		var hint   = MATCH_HINTS[ sel.value ] || MATCH_HINTS.exact;
+		var source = document.getElementById( 'lg-source' );
+		var target = document.getElementById( 'lg-target' );
+		var help   = document.querySelector( '.lg-match-help' );
+		var excRow = document.querySelector( '.lg-exceptions-row' );
+
+		if ( source ) {
+			source.placeholder = hint.src;
+		}
+		if ( target ) {
+			target.placeholder = hint.tgt;
+		}
+		if ( help ) {
+			help.textContent = hint.help;
+		}
+		if ( excRow ) {
+			if ( 'exact' === sel.value ) {
+				excRow.setAttribute( 'hidden', '' );
+			} else {
+				excRow.removeAttribute( 'hidden' );
+			}
+		}
+	}
+
+	$( document ).on( 'change', '#lg-match-type', updateMatchUi );
+	updateMatchUi();
+
 	// Toggle the (full-width) Add / Edit redirect panel.
 	$( document ).on( 'click', '.lg-add-toggle', function () {
 		var panel = document.getElementById( 'lg-add-panel' );

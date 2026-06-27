@@ -68,6 +68,7 @@ class Link_Guardian {
 	protected function init() {
 		// Translations for plugins hosted on WordPress.org load automatically
 		// (since WP 4.6), so no load_plugin_textdomain() call is needed.
+		add_action( 'admin_init', array( 'Link_Guardian_Activator', 'maybe_upgrade' ) );
 		$this->redirects->init();
 		$this->watcher->init();
 		$this->scanner->init();

@@ -121,13 +121,15 @@ class Link_Guardian_Redirects {
 	// --- CRUD ---
 
 	/**
-	 * Insert or update a redirect, keyed on its (unique) source path.
+	 * Insert or update a redirect, keyed on its (unique) source.
 	 *
 	 * @param array $args {
 	 *     Redirect fields.
 	 *
-	 *     @type string $source_path   Required. Source URL or path.
-	 *     @type string $target_url    Required. Destination URL or path.
+	 *     @type string $source_path   Required. Source URL/path, or a wildcard/regex pattern.
+	 *     @type string $target_url    Required. Destination (supports $1, $2 capture refs for patterns).
+	 *     @type string $match_type    'exact' (default), 'wildcard', or 'regex'.
+	 *     @type string $exceptions    Newline-separated paths to exclude from a pattern match.
 	 *     @type int    $redirect_type 301 or 302.
 	 *     @type int    $is_active     1/0.
 	 *     @type int    $is_auto       1/0.
@@ -138,63 +140,302 @@ class Link_Guardian_Redirects {
 	public function upsert( $args ) {
 		global $wpdb;
 
-		$defaults = array(
+		$defaults   = array(
 			'source_path'   => '',
 			'target_url'    => '',
+			'match_type'    => 'exact',
+			'exceptions'    => '',
 			'redirect_type' => 301,
 			'is_active'     => 1,
 			'is_auto'       => 0,
 			'post_id'       => 0,
 		);
-		$args     = wp_parse_args( $args, $defaults );
+		$args       = wp_parse_args( $args, $defaults );
+		$match_type = self::sanitize_match_type( $args['match_type'] );
 
-		$source = self::normalize_path( $args['source_path'] );
-		$target = self::sanitize_target( $args['target_url'] );
+		if ( 'exact' === $match_type ) {
+			$source = self::normalize_path( $args['source_path'] );
+			$target = self::sanitize_target( $args['target_url'] );
+		} else {
+			$source = self::normalize_pattern_source( $args['source_path'], $match_type );
+			$target = self::sanitize_pattern_target( $args['target_url'] );
+		}
 
 		if ( '' === $source || '' === $target ) {
 			return false;
 		}
 
-		// Refuse anything that would create a redirect loop: a direct self-loop, or a
-		// multi-hop A -> B -> ... -> A cycle that closes through the existing rules.
-		if ( $this->would_create_cycle( $source, $target ) ) {
+		if ( 'exact' === $match_type ) {
+			// Refuse anything that would create a redirect loop.
+			if ( $this->would_create_cycle( $source, $target ) ) {
+				return false;
+			}
+		} elseif ( null === self::compile_pattern( $source, $match_type ) ) {
+			// A pattern must compile to a valid, bounded expression.
 			return false;
 		}
 
-		$type = in_array( (int) $args['redirect_type'], array( 301, 302, 307, 308 ), true ) ? (int) $args['redirect_type'] : 301;
-
+		$type     = in_array( (int) $args['redirect_type'], array( 301, 302, 307, 308 ), true ) ? (int) $args['redirect_type'] : 301;
 		$existing = $this->get_by_source( $source );
 
-		$data = array(
+		$data    = array(
 			'source_path'   => $source,
 			'target_url'    => $target,
+			'match_type'    => $match_type,
+			'exceptions'    => self::sanitize_exceptions( $args['exceptions'] ),
 			'redirect_type' => $type,
 			'is_active'     => $args['is_active'] ? 1 : 0,
 			'is_auto'       => $args['is_auto'] ? 1 : 0,
 			'post_id'       => (int) $args['post_id'],
 		);
+		$formats = array( '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%d' );
+
+		$this->flush_cache();
 
 		if ( $existing ) {
-			$wpdb->update(
-				self::table(),
-				$data,
-				array( 'id' => $existing->id ),
-				array( '%s', '%s', '%d', '%d', '%d', '%d' ),
-				array( '%d' )
-			);
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom redirects table; no core API.
+			$wpdb->update( self::table(), $data, array( 'id' => $existing->id ), $formats, array( '%d' ) );
 			return (int) $existing->id;
 		}
 
 		$data['hits']       = 0;
 		$data['created_at'] = current_time( 'mysql' );
+		$formats[]          = '%d';
+		$formats[]          = '%s';
 
-		$ok = $wpdb->insert(
-			self::table(),
-			$data,
-			array( '%s', '%s', '%d', '%d', '%d', '%d', '%d', '%s' )
-		);
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom redirects table; no core API.
+		$ok = $wpdb->insert( self::table(), $data, $formats );
 
 		return $ok ? (int) $wpdb->insert_id : false;
+	}
+
+	/* ---- Pattern matching engine (wildcard / regex) ---- */
+
+	/**
+	 * Normalise a match type to one of: exact, wildcard, regex.
+	 *
+	 * @param string $type Raw type.
+	 * @return string
+	 */
+	public static function sanitize_match_type( $type ) {
+		$type = is_string( $type ) ? strtolower( trim( $type ) ) : 'exact';
+		return in_array( $type, array( 'exact', 'wildcard', 'regex' ), true ) ? $type : 'exact';
+	}
+
+	/**
+	 * Normalise a pattern source. Wildcards get a leading slash (keeping "*");
+	 * regex sources are stored verbatim. Capped to fit the indexed column.
+	 *
+	 * @param string $source     Raw source.
+	 * @param string $match_type wildcard|regex.
+	 * @return string
+	 */
+	public static function normalize_pattern_source( $source, $match_type ) {
+		$source = trim( (string) $source );
+		if ( '' === $source ) {
+			return '';
+		}
+		$source = substr( $source, 0, 190 );
+		return ( 'wildcard' === $match_type ) ? '/' . ltrim( $source, '/' ) : $source;
+	}
+
+	/**
+	 * Sanitise a pattern target: allow capture refs ($1) and paths/URLs, but
+	 * reject dangerous schemes and protocol-relative hosts.
+	 *
+	 * @param string $target Raw target.
+	 * @return string
+	 */
+	public static function sanitize_pattern_target( $target ) {
+		$target = trim( (string) $target );
+		if ( '' === $target || 0 === strpos( $target, '//' ) ) {
+			return '';
+		}
+		if ( preg_match( '#^[a-z][a-z0-9+.\-]*:#i', $target ) && ! preg_match( '#^https?://#i', $target ) ) {
+			return '';
+		}
+		return $target;
+	}
+
+	/**
+	 * Sanitise an exceptions list: trim lines, drop blanks, cap count and length.
+	 *
+	 * @param string $exceptions Raw newline-separated list.
+	 * @return string
+	 */
+	public static function sanitize_exceptions( $exceptions ) {
+		$exceptions = (string) $exceptions;
+		if ( '' === trim( $exceptions ) ) {
+			return '';
+		}
+		$out = array();
+		foreach ( preg_split( '/\r\n|\r|\n/', $exceptions ) as $line ) {
+			$line = trim( $line );
+			if ( '' !== $line ) {
+				$out[] = $line;
+			}
+			if ( count( $out ) >= 100 ) {
+				break;
+			}
+		}
+		return substr( implode( "\n", $out ), 0, 5000 );
+	}
+
+	/**
+	 * Compile a pattern source into a bounded, delimited regex, or null if invalid.
+	 *
+	 * @param string $source     Pattern source.
+	 * @param string $match_type wildcard|regex.
+	 * @return string|null
+	 */
+	public static function compile_pattern( $source, $match_type ) {
+		$source = (string) $source;
+		if ( '' === $source || strlen( $source ) > 190 ) {
+			return null;
+		}
+		if ( 'wildcard' === $match_type ) {
+			return '#^' . str_replace( '\*', '(.*)', preg_quote( $source, '#' ) ) . '$#';
+		}
+		if ( 'regex' === $match_type ) {
+			$regex = '#' . $source . '#';
+			// A compile error makes preg_match return false rather than 0/1.
+			return ( false !== @preg_match( $regex, '' ) ) ? $regex : null; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		}
+		return null;
+	}
+
+	/**
+	 * Run preg_match() with a bounded backtrack limit so a pathological pattern
+	 * fails fast instead of hanging the request (ReDoS guard).
+	 *
+	 * @param string $regex   Delimited regex.
+	 * @param string $subject Subject path.
+	 * @return bool True on match.
+	 */
+	protected static function bounded_match( $regex, $subject ) {
+		$previous = ini_get( 'pcre.backtrack_limit' );
+		ini_set( 'pcre.backtrack_limit', '100000' ); // phpcs:ignore WordPress.PHP.IniSet.Risky
+		$result = @preg_match( $regex, $subject ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		if ( false !== $previous ) {
+			ini_set( 'pcre.backtrack_limit', $previous ); // phpcs:ignore WordPress.PHP.IniSet.Risky
+		}
+		return 1 === $result;
+	}
+
+	/**
+	 * Active pattern (non-exact) rules, cached for the request.
+	 *
+	 * @return object[]
+	 */
+	public function get_pattern_rules() {
+		$cached = wp_cache_get( 'pattern_rules', 'link_guardian' );
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+		global $wpdb;
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Custom table; name from $wpdb->prefix; fixed condition, no user input; cached below.
+		$rows = (array) $wpdb->get_results( "SELECT * FROM {$table} WHERE is_active = 1 AND match_type <> 'exact' ORDER BY id ASC LIMIT 200" );
+		wp_cache_set( 'pattern_rules', $rows, 'link_guardian' );
+		return $rows;
+	}
+
+	/**
+	 * Match a request path against the active pattern rules.
+	 *
+	 * @param string $path Requested path.
+	 * @return array|null { @type string $target, @type int $type, @type int $first_id } or null.
+	 */
+	public function match_pattern( $path ) {
+		foreach ( $this->get_pattern_rules() as $rule ) {
+			$regex = self::compile_pattern( $rule->source_path, $rule->match_type );
+			if ( null === $regex || ! self::bounded_match( $regex, $path ) ) {
+				continue;
+			}
+			if ( self::path_excepted( $path, isset( $rule->exceptions ) ? $rule->exceptions : '' ) ) {
+				continue;
+			}
+
+			$replacement = ( 'wildcard' === $rule->match_type )
+				? self::wildcard_replacement( $rule->target_url )
+				: $rule->target_url;
+
+			$target = @preg_replace( $regex, $replacement, $path, 1 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			if ( null === $target || '' === $target ) {
+				continue;
+			}
+
+			$absolute = self::absolute_target( $target );
+
+			// Same-path guard so a pattern can never redirect a URL onto itself.
+			if ( self::is_same_host( $absolute ) && self::normalize_path( $absolute ) === $path ) {
+				continue;
+			}
+
+			return array(
+				'target'   => $absolute,
+				'type'     => in_array( (int) $rule->redirect_type, array( 301, 302, 307, 308 ), true ) ? (int) $rule->redirect_type : 301,
+				'first_id' => (int) $rule->id,
+			);
+		}
+		return null;
+	}
+
+	/**
+	 * Whether a request path is covered by a rule's exception list.
+	 *
+	 * @param string $path       Request path.
+	 * @param string $exceptions Newline-separated exceptions (exact or wildcard).
+	 * @return bool
+	 */
+	protected static function path_excepted( $path, $exceptions ) {
+		$exceptions = (string) $exceptions;
+		if ( '' === trim( $exceptions ) ) {
+			return false;
+		}
+		foreach ( preg_split( '/\r\n|\r|\n/', $exceptions ) as $line ) {
+			$line = trim( $line );
+			if ( '' === $line ) {
+				continue;
+			}
+			if ( false !== strpos( $line, '*' ) ) {
+				$regex = '#^' . str_replace( '\*', '.*', preg_quote( self::normalize_pattern_source( $line, 'wildcard' ), '#' ) ) . '$#';
+				if ( self::bounded_match( $regex, $path ) ) {
+					return true;
+				}
+			} elseif ( self::normalize_path( $line ) === $path ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Convert a wildcard target's "*" placeholders into ordered capture refs.
+	 *
+	 * @param string $target Wildcard target (with "*").
+	 * @return string
+	 */
+	protected static function wildcard_replacement( $target ) {
+		$parts = explode( '*', (string) $target );
+		$out   = '';
+		$last  = count( $parts ) - 1;
+		foreach ( $parts as $i => $part ) {
+			$out .= str_replace( array( '\\', '$' ), array( '\\\\', '\\$' ), $part );
+			if ( $i < $last ) {
+				$out .= '$' . ( $i + 1 );
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Clear the pattern-rule cache after any write.
+	 *
+	 * @return void
+	 */
+	protected function flush_cache() {
+		wp_cache_delete( 'pattern_rules', 'link_guardian' );
 	}
 
 	/**
@@ -230,6 +471,8 @@ class Link_Guardian_Redirects {
 	 */
 	public function delete( $id ) {
 		global $wpdb;
+		$this->flush_cache();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom redirects table; no core API.
 		return (bool) $wpdb->delete( self::table(), array( 'id' => (int) $id ), array( '%d' ) );
 	}
 
@@ -245,6 +488,8 @@ class Link_Guardian_Redirects {
 	public function delete_by_source( $source_path ) {
 		global $wpdb;
 		$source = self::normalize_path( $source_path );
+		$this->flush_cache();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom redirects table; no core API.
 		return (int) $wpdb->delete( self::table(), array( 'source_path' => $source ), array( '%s' ) );
 	}
 
@@ -257,6 +502,7 @@ class Link_Guardian_Redirects {
 	 */
 	public function set_active( $id, $active ) {
 		global $wpdb;
+		$this->flush_cache();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom redirects table; no core API.
 		return (bool) $wpdb->update(
 			self::table(),
@@ -284,29 +530,41 @@ class Link_Guardian_Redirects {
 	 * Update an existing redirect's target + type (keyed by id). The source path
 	 * is the rule's identity and is not changed here.
 	 *
-	 * @param int    $id     Row id.
-	 * @param string $target New target URL or path.
-	 * @param int    $type   301 or 302.
+	 * @param int         $id         Row id.
+	 * @param string      $target     New target URL or path (capture refs allowed for patterns).
+	 * @param int         $type       301 or 302.
+	 * @param string|null $exceptions Optional new exceptions list (patterns); null leaves it unchanged.
 	 * @return bool
 	 */
-	public function update_target( $id, $target, $type ) {
+	public function update_target( $id, $target, $type, $exceptions = null ) {
 		global $wpdb;
-		$target = self::sanitize_target( $target );
+
+		$row = $this->get( $id );
+		if ( ! $row ) {
+			return false;
+		}
+
+		$match_type = self::sanitize_match_type( $row->match_type );
+		$target     = ( 'exact' === $match_type ) ? self::sanitize_target( $target ) : self::sanitize_pattern_target( $target );
 		if ( '' === $target ) {
 			return false;
 		}
-		$type = in_array( (int) $type, array( 301, 302, 307, 308 ), true ) ? (int) $type : 301;
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom redirects table; no core API.
-		return (bool) $wpdb->update(
-			self::table(),
-			array(
-				'target_url'    => $target,
-				'redirect_type' => $type,
-			),
-			array( 'id' => (int) $id ),
-			array( '%s', '%d' ),
-			array( '%d' )
+
+		$type    = in_array( (int) $type, array( 301, 302, 307, 308 ), true ) ? (int) $type : 301;
+		$data    = array(
+			'target_url'    => $target,
+			'redirect_type' => $type,
 		);
+		$formats = array( '%s', '%d' );
+
+		if ( null !== $exceptions ) {
+			$data['exceptions'] = self::sanitize_exceptions( $exceptions );
+			$formats[]          = '%s';
+		}
+
+		$this->flush_cache();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom redirects table; no core API.
+		return (bool) $wpdb->update( self::table(), $data, array( 'id' => (int) $id ), $formats, array( '%d' ) );
 	}
 
 	/**
@@ -395,6 +653,10 @@ class Link_Guardian_Redirects {
 
 		$path     = self::normalize_path( $request );
 		$resolved = $this->resolve_chain( $path );
+		if ( null === $resolved ) {
+			// No exact rule matched: fall back to wildcard / regex pattern rules.
+			$resolved = $this->match_pattern( $path );
+		}
 		if ( null === $resolved ) {
 			return;
 		}

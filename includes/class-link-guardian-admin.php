@@ -316,12 +316,14 @@ class Link_Guardian_Admin {
 		check_admin_referer( 'lg_add_redirect' );
 		$this->require_cap();
 
-		$source = isset( $_POST['source_path'] ) ? sanitize_text_field( wp_unslash( $_POST['source_path'] ) ) : '';
-		$target = isset( $_POST['target_url'] ) ? sanitize_text_field( wp_unslash( $_POST['target_url'] ) ) : '';
-		$type   = isset( $_POST['redirect_type'] ) ? (int) $_POST['redirect_type'] : 301;
+		$source     = isset( $_POST['source_path'] ) ? sanitize_text_field( wp_unslash( $_POST['source_path'] ) ) : '';
+		$target     = isset( $_POST['target_url'] ) ? sanitize_text_field( wp_unslash( $_POST['target_url'] ) ) : '';
+		$type       = isset( $_POST['redirect_type'] ) ? (int) $_POST['redirect_type'] : 301;
+		$match_type = isset( $_POST['match_type'] ) ? Link_Guardian_Redirects::sanitize_match_type( sanitize_key( wp_unslash( $_POST['match_type'] ) ) ) : 'exact';
+		$exceptions = isset( $_POST['exceptions'] ) ? sanitize_textarea_field( wp_unslash( $_POST['exceptions'] ) ) : '';
 
-		// Reject loop-forming rules with a clear message before we even try to save.
-		if ( '' !== $source && '' !== $target && $this->redirects->would_create_cycle( $source, $target ) ) {
+		// Loop prevention applies to exact rules; pattern rules are guarded at serve time.
+		if ( 'exact' === $match_type && '' !== $source && '' !== $target && $this->redirects->would_create_cycle( $source, $target ) ) {
 			$this->redirect_back( 'loop' );
 		}
 
@@ -329,6 +331,8 @@ class Link_Guardian_Admin {
 			array(
 				'source_path'   => $source,
 				'target_url'    => $target,
+				'match_type'    => $match_type,
+				'exceptions'    => $exceptions,
 				'redirect_type' => $type,
 				'is_active'     => 1,
 				'is_auto'       => 0,
@@ -374,22 +378,22 @@ class Link_Guardian_Admin {
 		check_admin_referer( 'lg_update_redirect' );
 		$this->require_cap();
 
-		$id     = isset( $_POST['id'] ) ? (int) $_POST['id'] : 0;
-		$target = isset( $_POST['target_url'] ) ? sanitize_text_field( wp_unslash( $_POST['target_url'] ) ) : '';
-		$type   = isset( $_POST['redirect_type'] ) ? (int) $_POST['redirect_type'] : 301;
+		$id         = isset( $_POST['id'] ) ? (int) $_POST['id'] : 0;
+		$target     = isset( $_POST['target_url'] ) ? sanitize_text_field( wp_unslash( $_POST['target_url'] ) ) : '';
+		$type       = isset( $_POST['redirect_type'] ) ? (int) $_POST['redirect_type'] : 301;
+		$exceptions = isset( $_POST['exceptions'] ) ? sanitize_textarea_field( wp_unslash( $_POST['exceptions'] ) ) : null;
 
 		$row = $id ? $this->redirects->get( $id ) : null;
 		if ( ! $row ) {
 			$this->redirect_back( 'error' );
 		}
 
-		// Loop protection applies to edits too: the new target must not point back
-		// to this rule's source (directly or through a chain).
-		if ( '' !== $target && $this->redirects->would_create_cycle( $row->source_path, $target ) ) {
+		// Loop protection on edits (exact rules only; patterns are guarded at serve time).
+		if ( 'exact' === $row->match_type && '' !== $target && $this->redirects->would_create_cycle( $row->source_path, $target ) ) {
 			$this->redirect_back( 'loop' );
 		}
 
-		$ok = $this->redirects->update_target( $id, $target, $type );
+		$ok = $this->redirects->update_target( $id, $target, $type, $exceptions );
 		$this->redirect_back( $ok ? 'updated' : 'error' );
 	}
 
@@ -503,12 +507,16 @@ class Link_Guardian_Admin {
 						<input type="hidden" name="id" value="<?php echo (int) $edit_row->id; ?>">
 						<?php wp_nonce_field( 'lg_update_redirect' ); ?>
 						<div class="lg-form-row">
+							<div class="lg-field lg-field--type">
+								<label for="lg-edit-match"><?php esc_html_e( 'Match', 'link-guardian' ); ?></label>
+								<input type="text" id="lg-edit-match" value="<?php echo esc_attr( ucfirst( $edit_row->match_type ) ); ?>" readonly>
+							</div>
 							<div class="lg-field">
 								<label for="lg-edit-source"><?php esc_html_e( 'Source', 'link-guardian' ); ?></label>
 								<input type="text" id="lg-edit-source" value="<?php echo esc_attr( $edit_row->source_path ); ?>" readonly>
 							</div>
 							<div class="lg-field">
-								<label for="lg-target"><?php esc_html_e( 'New URL or path', 'link-guardian' ); ?></label>
+								<label for="lg-target"><?php esc_html_e( 'Target', 'link-guardian' ); ?></label>
 								<input type="text" id="lg-target" name="target_url" value="<?php echo esc_attr( $edit_row->target_url ); ?>" required>
 							</div>
 							<div class="lg-field lg-field--type">
@@ -519,6 +527,12 @@ class Link_Guardian_Admin {
 								</select>
 							</div>
 						</div>
+						<?php if ( 'exact' !== $edit_row->match_type ) : ?>
+							<div class="lg-exceptions-row">
+								<label for="lg-edit-exceptions"><?php esc_html_e( 'Exceptions — paths to skip (one per line, * allowed)', 'link-guardian' ); ?></label>
+								<textarea id="lg-edit-exceptions" name="exceptions" rows="3" class="large-text"><?php echo esc_textarea( (string) $edit_row->exceptions ); ?></textarea>
+							</div>
+						<?php endif; ?>
 						<p class="description"><?php esc_html_e( 'The source is the rule’s identity. To change it, delete this rule and add a new one.', 'link-guardian' ); ?></p>
 						<p>
 							<button type="submit" class="button button-primary"><?php esc_html_e( 'Update redirect', 'link-guardian' ); ?></button>
@@ -531,13 +545,21 @@ class Link_Guardian_Admin {
 						<input type="hidden" name="action" value="lg_add_redirect">
 						<?php wp_nonce_field( 'lg_add_redirect' ); ?>
 						<div class="lg-form-row">
-							<div class="lg-field">
-								<label for="lg-source"><?php esc_html_e( 'Old path', 'link-guardian' ); ?></label>
-								<input type="text" id="lg-source" name="source_path" placeholder="/old-url" value="<?php echo esc_attr( $prefill ); ?>" required>
+							<div class="lg-field lg-field--type">
+								<label for="lg-match-type"><?php esc_html_e( 'Match', 'link-guardian' ); ?></label>
+								<select id="lg-match-type" name="match_type" class="lg-match-type">
+									<option value="exact"><?php esc_html_e( 'Exact', 'link-guardian' ); ?></option>
+									<option value="wildcard"><?php esc_html_e( 'Wildcard', 'link-guardian' ); ?></option>
+									<option value="regex"><?php esc_html_e( 'Regex', 'link-guardian' ); ?></option>
+								</select>
 							</div>
 							<div class="lg-field">
-								<label for="lg-target"><?php esc_html_e( 'New URL or path', 'link-guardian' ); ?></label>
-								<input type="text" id="lg-target" name="target_url" placeholder="/new-url or https://example.com/page" required>
+								<label for="lg-source"><?php esc_html_e( 'Source', 'link-guardian' ); ?></label>
+								<input type="text" id="lg-source" name="source_path" class="lg-source-input" placeholder="/old-url" value="<?php echo esc_attr( $prefill ); ?>" required>
+							</div>
+							<div class="lg-field">
+								<label for="lg-target"><?php esc_html_e( 'Target', 'link-guardian' ); ?></label>
+								<input type="text" id="lg-target" name="target_url" class="lg-target-input" placeholder="/new-url or https://example.com/page" required>
 							</div>
 							<div class="lg-field lg-field--type">
 								<label for="lg-type"><?php esc_html_e( 'Type', 'link-guardian' ); ?></label>
@@ -546,6 +568,11 @@ class Link_Guardian_Admin {
 									<option value="302"><?php esc_html_e( '302 — Temporary', 'link-guardian' ); ?></option>
 								</select>
 							</div>
+						</div>
+						<p class="description lg-match-help"></p>
+						<div class="lg-exceptions-row" hidden>
+							<label for="lg-exceptions"><?php esc_html_e( 'Exceptions — paths to skip (one per line, * allowed)', 'link-guardian' ); ?></label>
+							<textarea id="lg-exceptions" name="exceptions" rows="3" class="large-text" placeholder="/blog/keep-this&#10;/blog/legacy-*"></textarea>
 						</div>
 						<p><button type="submit" class="button button-primary"><?php esc_html_e( 'Add redirect', 'link-guardian' ); ?></button></p>
 					</form>
@@ -564,6 +591,7 @@ class Link_Guardian_Admin {
 						<thead>
 							<tr>
 								<th><?php esc_html_e( 'Source', 'link-guardian' ); ?></th>
+								<th><?php esc_html_e( 'Match', 'link-guardian' ); ?></th>
 								<th><?php esc_html_e( 'Target', 'link-guardian' ); ?></th>
 								<th><?php esc_html_e( 'Type', 'link-guardian' ); ?></th>
 								<th><?php esc_html_e( 'Origin', 'link-guardian' ); ?></th>
@@ -574,11 +602,12 @@ class Link_Guardian_Admin {
 						</thead>
 						<tbody>
 						<?php if ( empty( $data['items'] ) ) : ?>
-							<tr><td colspan="7"><?php esc_html_e( 'No redirects yet. Change a published slug and one will appear here automatically.', 'link-guardian' ); ?></td></tr>
+							<tr><td colspan="8"><?php esc_html_e( 'No redirects yet. Change a published slug and one will appear here automatically.', 'link-guardian' ); ?></td></tr>
 						<?php else : ?>
 							<?php foreach ( $data['items'] as $row ) : ?>
 								<tr>
 									<td><code><?php echo esc_html( $row->source_path ); ?></code></td>
+									<td><span class="lg-badge<?php echo 'exact' === $row->match_type ? '' : ' lg-badge--pattern'; ?>"><?php echo esc_html( ucfirst( $row->match_type ) ); ?></span></td>
 									<td><code><?php echo esc_html( $row->target_url ); ?></code></td>
 									<td><?php echo (int) $row->redirect_type; ?></td>
 									<td>

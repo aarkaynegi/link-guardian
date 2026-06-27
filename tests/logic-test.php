@@ -44,6 +44,15 @@ function url_to_postid( $url ) {
 	// No real posts in the harness; treat every URL as resolving to none.
 	return 0;
 }
+function wp_cache_get( $key, $group = '' ) {
+	return false;
+}
+function wp_cache_set( $key, $value, $group = '' ) {
+	return true;
+}
+function wp_cache_delete( $key, $group = '' ) {
+	return true;
+}
 
 require __DIR__ . '/../includes/class-link-guardian-redirects.php';
 require __DIR__ . '/../includes/class-link-guardian-slug-watcher.php';
@@ -54,12 +63,16 @@ require __DIR__ . '/../includes/class-link-guardian-slug-watcher.php';
 class Test_Redirects extends Link_Guardian_Redirects {
 	public $rules = array();
 
-	public function add( $source, $target, $active = 1, $auto = 0, $type = 301 ) {
-		$p                 = self::normalize_path( $source );
-		$this->rules[ $p ] = (object) array(
+	public function add( $source, $target, $active = 1, $auto = 0, $type = 301, $match_type = 'exact', $exceptions = '' ) {
+		$key                 = ( 'exact' === $match_type )
+			? self::normalize_path( $source )
+			: self::normalize_pattern_source( $source, $match_type );
+		$this->rules[ $key ] = (object) array(
 			'id'            => count( $this->rules ) + 1,
-			'source_path'   => $p,
+			'source_path'   => $key,
 			'target_url'    => $target,
+			'match_type'    => $match_type,
+			'exceptions'    => $exceptions,
 			'redirect_type' => $type,
 			'is_active'     => $active,
 			'is_auto'       => $auto,
@@ -73,6 +86,16 @@ class Test_Redirects extends Link_Guardian_Redirects {
 
 	public function get_all() {
 		return array_values( $this->rules );
+	}
+
+	public function get_pattern_rules() {
+		$out = array();
+		foreach ( $this->rules as $r ) {
+			if ( 1 === (int) $r->is_active && 'exact' !== $r->match_type ) {
+				$out[] = $r;
+			}
+		}
+		return $out;
 	}
 }
 
@@ -172,6 +195,34 @@ check( 'sibling /about is NOT corrupted', ( false !== strpos( $out, 'href="https
 check( 'absolute /a IS rewritten', ( false !== strpos( $out, 'href="https://example.com/a-new"' ) ), true );
 check( 'relative /a IS rewritten', ( false !== strpos( $out, 'href="/a-new"' ) ), true );
 check( 'no leftover bare /a link', ( false === strpos( $out, 'href="/a"' ) ), true );
+
+echo "\n# pattern matching (wildcard / regex / exceptions)\n";
+$R->rules = array();
+$R->add( '/blog/*', '/news/*', 1, 0, 301, 'wildcard' );
+$w = $R->match_pattern( '/blog/hello-world' );
+check( 'wildcard /blog/* -> /news/*', $w && false !== strpos( $w['target'], '/news/hello-world' ), true );
+check( 'wildcard non-match returns null', $R->match_pattern( '/shop/x' ), null );
+
+$R->rules = array();
+$R->add( '^/shop/(\\d+)$', '/products/$1', 1, 0, 302, 'regex' );
+$rx = $R->match_pattern( '/shop/42' );
+check( 'regex capture -> /products/42', $rx && false !== strpos( $rx['target'], '/products/42' ), true );
+check( 'regex preserves redirect type 302', $rx && 302 === $rx['type'], true );
+check( 'regex no-match returns null', $R->match_pattern( '/shop/abc' ), null );
+
+$R->rules = array();
+$R->add( '/docs/*', '/help/*', 1, 0, 301, 'wildcard', "/docs/keep\n/docs/legacy-*" );
+check( 'exception (exact) skips the rule', $R->match_pattern( '/docs/keep' ), null );
+check( 'exception (wildcard) skips the rule', $R->match_pattern( '/docs/legacy-v1' ), null );
+$ok = $R->match_pattern( '/docs/intro' );
+check( 'non-excepted path still redirects', $ok && false !== strpos( $ok['target'], '/help/intro' ), true );
+
+echo "\n# pattern validation / safety\n";
+check( 'invalid regex does not compile', Link_Guardian_Redirects::compile_pattern( '(unclosed', 'regex' ), null );
+check( 'valid wildcard compiles', is_string( Link_Guardian_Redirects::compile_pattern( '/a/*', 'wildcard' ) ), true );
+check( 'pattern target rejects javascript:', Link_Guardian_Redirects::sanitize_pattern_target( 'javascript:alert(1)' ), '' );
+check( 'pattern target keeps capture ref', Link_Guardian_Redirects::sanitize_pattern_target( '/x/$1' ), '/x/$1' );
+check( 'match_type sanitises unknown -> exact', Link_Guardian_Redirects::sanitize_match_type( 'bogus' ), 'exact' );
 
 echo "\n----------------------------------------\n";
 echo "RESULT: {$pass} passed, {$fail} failed\n";

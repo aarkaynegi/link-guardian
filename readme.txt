@@ -64,4 +64,8 @@ Yes — manual redirects may point to an external URL. Targets are sanitised on 
 == Changelog ==
 
 = 1.0.0 =
-* Initial release: auto-redirect + auto internal-link rewriting on slug change, redirect manager, broken-link scanner, loop/chain protection, and a REST audit API.
+* Initial release.
+* Auto 301 redirect + internal-link rewriting when a slug changes.
+* Pattern redirects: wildcard and regex (with $1 capture refs), ReDoS-guarded, plus per-pattern exceptions.
+* Redirect manager (add / edit / pause / delete / search), broken-link scanner, and a redirect audit REST API.
+* Multi-hop redirect-loop protection.

@@ -40,6 +40,21 @@
 	width: 100%;
 }
 
+.link-guardian-wrap .lg-exceptions-row {
+	margin: 4px 0 8px;
+}
+
+.link-guardian-wrap .lg-exceptions-row label {
+	display: block;
+	font-weight: 600;
+	margin-bottom: 4px;
+}
+
+.lg-badge--pattern {
+	background: #e7e3fb;
+	color: #5a3fb8;
+}
+
 /* Search row: input and button side by side, right-aligned above the table */
 .link-guardian-wrap .lg-search {
 	display: flex;

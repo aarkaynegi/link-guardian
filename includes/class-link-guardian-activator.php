@@ -63,6 +63,8 @@ class Link_Guardian_Activator {
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			source_path varchar(190) NOT NULL,
 			target_url text NOT NULL,
+			match_type varchar(10) NOT NULL DEFAULT 'exact',
+			exceptions text NULL,
 			redirect_type smallint(5) unsigned NOT NULL DEFAULT 301,
 			is_active tinyint(1) NOT NULL DEFAULT 1,
 			is_auto tinyint(1) NOT NULL DEFAULT 0,
@@ -72,10 +74,27 @@ class Link_Guardian_Activator {
 			created_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
 			PRIMARY KEY  (id),
 			UNIQUE KEY source_path (source_path),
-			KEY post_id (post_id)
+			KEY post_id (post_id),
+			KEY match_type (match_type)
 		) {$charset_collate};";
 
 		dbDelta( $sql );
+	}
+
+	/**
+	 * Run pending schema upgrades for already-active installs (called on load).
+	 *
+	 * The dbDelta() routine is idempotent and adds any missing columns/keys, so
+	 * we simply re-run it when the stored DB version is behind the code version.
+	 *
+	 * @return void
+	 */
+	public static function maybe_upgrade() {
+		if ( (string) get_option( 'link_guardian_db_version' ) === (string) LINK_GUARDIAN_DB_VERSION ) {
+			return;
+		}
+		self::create_table();
+		update_option( 'link_guardian_db_version', LINK_GUARDIAN_DB_VERSION );
 	}
 
 	/**
