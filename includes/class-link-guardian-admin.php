@@ -62,6 +62,7 @@ class Link_Guardian_Admin {
 		add_action( 'admin_post_lg_add_redirect', array( $this, 'handle_add_redirect' ) );
 		add_action( 'admin_post_lg_delete_redirect', array( $this, 'handle_delete_redirect' ) );
 		add_action( 'admin_post_lg_toggle_redirect', array( $this, 'handle_toggle_redirect' ) );
+		add_action( 'admin_post_lg_update_redirect', array( $this, 'handle_update_redirect' ) );
 
 		add_filter( 'plugin_action_links_' . LINK_GUARDIAN_BASENAME, array( $this, 'plugin_action_links' ) );
 	}
@@ -365,6 +366,34 @@ class Link_Guardian_Admin {
 	}
 
 	/**
+	 * Handle the "edit redirect" form — updates an existing rule's target + type.
+	 *
+	 * @return void
+	 */
+	public function handle_update_redirect() {
+		check_admin_referer( 'lg_update_redirect' );
+		$this->require_cap();
+
+		$id     = isset( $_POST['id'] ) ? (int) $_POST['id'] : 0;
+		$target = isset( $_POST['target_url'] ) ? sanitize_text_field( wp_unslash( $_POST['target_url'] ) ) : '';
+		$type   = isset( $_POST['redirect_type'] ) ? (int) $_POST['redirect_type'] : 301;
+
+		$row = $id ? $this->redirects->get( $id ) : null;
+		if ( ! $row ) {
+			$this->redirect_back( 'error' );
+		}
+
+		// Loop protection applies to edits too: the new target must not point back
+		// to this rule's source (directly or through a chain).
+		if ( '' !== $target && $this->redirects->would_create_cycle( $row->source_path, $target ) ) {
+			$this->redirect_back( 'loop' );
+		}
+
+		$ok = $this->redirects->update_target( $id, $target, $type );
+		$this->redirect_back( $ok ? 'updated' : 'error' );
+	}
+
+	/**
 	 * Capability guard for form handlers. Each handler verifies its own nonce
 	 * via check_admin_referer() before any request data is read.
 	 *
@@ -440,7 +469,15 @@ class Link_Guardian_Admin {
 		$paged   = isset( $_GET['paged'] ) ? max( 1, (int) $_GET['paged'] ) : 1;
 		$search  = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '';
 		$prefill = isset( $_GET['lg_prefill_source'] ) ? sanitize_text_field( wp_unslash( $_GET['lg_prefill_source'] ) ) : '';
+		$edit_id = isset( $_GET['edit'] ) ? (int) $_GET['edit'] : 0;
+		$msg     = isset( $_GET['lg_msg'] ) ? sanitize_key( wp_unslash( $_GET['lg_msg'] ) ) : '';
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		$edit_row = $edit_id ? $this->redirects->get( $edit_id ) : null;
+
+		// Reveal the add/edit panel automatically when editing, after a failed
+		// submission, or when prefilled from the broken-link scanner.
+		$panel_open = $edit_row || '' !== $prefill || in_array( $msg, array( 'loop', 'error' ), true );
 
 		$per_page    = 20;
 		$data        = $this->redirects->query(
@@ -454,45 +491,76 @@ class Link_Guardian_Admin {
 		?>
 		<div class="wrap link-guardian-wrap">
 			<h1 class="wp-heading-inline"><?php esc_html_e( 'Link Guardian — Redirects', 'link-guardian' ); ?></h1>
+			<button type="button" class="page-title-action lg-add-toggle" aria-controls="lg-add-panel" aria-expanded="<?php echo $panel_open ? 'true' : 'false'; ?>"><?php esc_html_e( 'Add Redirect', 'link-guardian' ); ?></button>
 			<hr class="wp-header-end">
 			<?php $this->maybe_notice(); ?>
 
-			<div class="lg-grid">
-				<div class="lg-card">
+			<div class="lg-card lg-add-panel" id="lg-add-panel"<?php echo $panel_open ? '' : ' hidden'; ?>>
+				<?php if ( $edit_row ) : ?>
+					<h2 id="lg-edit"><?php esc_html_e( 'Edit redirect', 'link-guardian' ); ?></h2>
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+						<input type="hidden" name="action" value="lg_update_redirect">
+						<input type="hidden" name="id" value="<?php echo (int) $edit_row->id; ?>">
+						<?php wp_nonce_field( 'lg_update_redirect' ); ?>
+						<div class="lg-form-row">
+							<div class="lg-field">
+								<label for="lg-edit-source"><?php esc_html_e( 'Source', 'link-guardian' ); ?></label>
+								<input type="text" id="lg-edit-source" value="<?php echo esc_attr( $edit_row->source_path ); ?>" readonly>
+							</div>
+							<div class="lg-field">
+								<label for="lg-target"><?php esc_html_e( 'New URL or path', 'link-guardian' ); ?></label>
+								<input type="text" id="lg-target" name="target_url" value="<?php echo esc_attr( $edit_row->target_url ); ?>" required>
+							</div>
+							<div class="lg-field lg-field--type">
+								<label for="lg-type"><?php esc_html_e( 'Type', 'link-guardian' ); ?></label>
+								<select id="lg-type" name="redirect_type">
+									<option value="301" <?php selected( (int) $edit_row->redirect_type, 301 ); ?>><?php esc_html_e( '301 — Permanent', 'link-guardian' ); ?></option>
+									<option value="302" <?php selected( (int) $edit_row->redirect_type, 302 ); ?>><?php esc_html_e( '302 — Temporary', 'link-guardian' ); ?></option>
+								</select>
+							</div>
+						</div>
+						<p class="description"><?php esc_html_e( 'The source is the rule’s identity. To change it, delete this rule and add a new one.', 'link-guardian' ); ?></p>
+						<p>
+							<button type="submit" class="button button-primary"><?php esc_html_e( 'Update redirect', 'link-guardian' ); ?></button>
+							<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::MENU_SLUG ) ); ?>" class="button button-secondary"><?php esc_html_e( 'Cancel', 'link-guardian' ); ?></a>
+						</p>
+					</form>
+				<?php else : ?>
 					<h2><?php esc_html_e( 'Add a redirect', 'link-guardian' ); ?></h2>
 					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 						<input type="hidden" name="action" value="lg_add_redirect">
 						<?php wp_nonce_field( 'lg_add_redirect' ); ?>
-						<p>
-							<label for="lg-source"><?php esc_html_e( 'Old path', 'link-guardian' ); ?></label>
-							<input type="text" id="lg-source" name="source_path" class="regular-text" placeholder="/old-url" value="<?php echo esc_attr( $prefill ); ?>" required>
-						</p>
-						<p>
-							<label for="lg-target"><?php esc_html_e( 'New URL or path', 'link-guardian' ); ?></label>
-							<input type="text" id="lg-target" name="target_url" class="regular-text" placeholder="/new-url" required>
-						</p>
-						<p>
-							<label for="lg-type"><?php esc_html_e( 'Type', 'link-guardian' ); ?></label>
-							<select id="lg-type" name="redirect_type">
-								<option value="301"><?php esc_html_e( '301 — Permanent', 'link-guardian' ); ?></option>
-								<option value="302"><?php esc_html_e( '302 — Temporary', 'link-guardian' ); ?></option>
-							</select>
-						</p>
+						<div class="lg-form-row">
+							<div class="lg-field">
+								<label for="lg-source"><?php esc_html_e( 'Old path', 'link-guardian' ); ?></label>
+								<input type="text" id="lg-source" name="source_path" placeholder="/old-url" value="<?php echo esc_attr( $prefill ); ?>" required>
+							</div>
+							<div class="lg-field">
+								<label for="lg-target"><?php esc_html_e( 'New URL or path', 'link-guardian' ); ?></label>
+								<input type="text" id="lg-target" name="target_url" placeholder="/new-url or https://example.com/page" required>
+							</div>
+							<div class="lg-field lg-field--type">
+								<label for="lg-type"><?php esc_html_e( 'Type', 'link-guardian' ); ?></label>
+								<select id="lg-type" name="redirect_type">
+									<option value="301"><?php esc_html_e( '301 — Permanent', 'link-guardian' ); ?></option>
+									<option value="302"><?php esc_html_e( '302 — Temporary', 'link-guardian' ); ?></option>
+								</select>
+							</div>
+						</div>
 						<p><button type="submit" class="button button-primary"><?php esc_html_e( 'Add redirect', 'link-guardian' ); ?></button></p>
 					</form>
-				</div>
+				<?php endif; ?>
+			</div>
 
-				<div class="lg-card lg-card--wide">
-					<form method="get">
-						<input type="hidden" name="page" value="<?php echo esc_attr( self::MENU_SLUG ); ?>">
-						<p class="search-box">
-							<label class="screen-reader-text" for="lg-search"><?php esc_html_e( 'Search redirects', 'link-guardian' ); ?></label>
-							<input type="search" id="lg-search" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="<?php esc_attr_e( 'Search redirects…', 'link-guardian' ); ?>">
-							<button type="submit" class="button"><?php esc_html_e( 'Search', 'link-guardian' ); ?></button>
-						</p>
-					</form>
+			<div class="lg-card lg-table-card">
+				<form method="get" class="lg-search">
+					<input type="hidden" name="page" value="<?php echo esc_attr( self::MENU_SLUG ); ?>">
+					<label class="screen-reader-text" for="lg-search-input"><?php esc_html_e( 'Search redirects', 'link-guardian' ); ?></label>
+					<input type="search" id="lg-search-input" name="s" value="<?php echo esc_attr( $search ); ?>" placeholder="<?php esc_attr_e( 'Search redirects…', 'link-guardian' ); ?>">
+					<button type="submit" class="button"><?php esc_html_e( 'Search', 'link-guardian' ); ?></button>
+				</form>
 
-					<table class="wp-list-table widefat fixed striped">
+				<table class="wp-list-table widefat fixed striped">
 						<thead>
 							<tr>
 								<th><?php esc_html_e( 'Source', 'link-guardian' ); ?></th>
@@ -529,6 +597,8 @@ class Link_Guardian_Admin {
 										<?php endif; ?>
 									</td>
 									<td class="lg-actions">
+										<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . self::MENU_SLUG . '&edit=' . (int) $row->id ) ); ?>#lg-edit"><?php esc_html_e( 'Edit', 'link-guardian' ); ?></a>
+										&nbsp;|&nbsp;
 										<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline">
 											<input type="hidden" name="action" value="lg_toggle_redirect">
 											<input type="hidden" name="id" value="<?php echo (int) $row->id; ?>">
@@ -571,7 +641,6 @@ class Link_Guardian_Admin {
 						</div></div>
 					<?php endif; ?>
 				</div>
-			</div>
 		</div>
 		<?php
 	}

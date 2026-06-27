@@ -190,4 +190,20 @@
 
 	$( document ).on( 'click', '#lg-scan-start', startScan );
 	$( document ).on( 'click', '#lg-audit-run', runAudit );
+
+	// Toggle the (full-width) Add / Edit redirect panel.
+	$( document ).on( 'click', '.lg-add-toggle', function () {
+		var panel = document.getElementById( 'lg-add-panel' );
+		if ( ! panel ) {
+			return;
+		}
+		var willOpen = panel.hasAttribute( 'hidden' );
+		if ( willOpen ) {
+			panel.removeAttribute( 'hidden' );
+			panel.querySelector( 'input:not([readonly]):not([type=hidden])' ).focus();
+		} else {
+			panel.setAttribute( 'hidden', '' );
+		}
+		$( this ).attr( 'aria-expanded', willOpen ? 'true' : 'false' );
+	} );
 } )( jQuery );

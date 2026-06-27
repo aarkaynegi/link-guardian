@@ -257,11 +257,54 @@ class Link_Guardian_Redirects {
 	 */
 	public function set_active( $id, $active ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom redirects table; no core API.
 		return (bool) $wpdb->update(
 			self::table(),
 			array( 'is_active' => $active ? 1 : 0 ),
 			array( 'id' => (int) $id ),
 			array( '%d' ),
+			array( '%d' )
+		);
+	}
+
+	/**
+	 * Fetch a single redirect by id.
+	 *
+	 * @param int $id Row id.
+	 * @return object|null
+	 */
+	public function get( $id ) {
+		global $wpdb;
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Custom table; name from $wpdb->prefix, value bound via prepare().
+		return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", (int) $id ) );
+	}
+
+	/**
+	 * Update an existing redirect's target + type (keyed by id). The source path
+	 * is the rule's identity and is not changed here.
+	 *
+	 * @param int    $id     Row id.
+	 * @param string $target New target URL or path.
+	 * @param int    $type   301 or 302.
+	 * @return bool
+	 */
+	public function update_target( $id, $target, $type ) {
+		global $wpdb;
+		$target = self::sanitize_target( $target );
+		if ( '' === $target ) {
+			return false;
+		}
+		$type = in_array( (int) $type, array( 301, 302, 307, 308 ), true ) ? (int) $type : 301;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom redirects table; no core API.
+		return (bool) $wpdb->update(
+			self::table(),
+			array(
+				'target_url'    => $target,
+				'redirect_type' => $type,
+			),
+			array( 'id' => (int) $id ),
+			array( '%s', '%d' ),
 			array( '%d' )
 		);
 	}

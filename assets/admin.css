@@ -1,42 +1,57 @@
 /* Link Guardian — admin styles */
 
-.link-guardian-wrap .lg-grid {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 20px;
-	align-items: flex-start;
-	margin-top: 16px;
-}
-
 .link-guardian-wrap .lg-card {
 	background: #fff;
 	border: 1px solid #dcdcde;
 	border-radius: 6px;
 	padding: 16px 20px;
 	box-shadow: 0 1px 1px rgba( 0, 0, 0, 0.04 );
-	flex: 1 1 260px;
-	max-width: 340px;
-}
-
-.link-guardian-wrap .lg-card--wide {
-	flex: 3 1 540px;
-	max-width: none;
+	margin-top: 16px;
 }
 
 .link-guardian-wrap .lg-card h2 {
 	margin-top: 0;
 }
 
-.link-guardian-wrap .lg-card label {
+/* Full-width add / edit form */
+.link-guardian-wrap .lg-add-panel .lg-form-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 16px;
+	align-items: flex-end;
+}
+
+.link-guardian-wrap .lg-form-row .lg-field {
+	flex: 1 1 320px;
+}
+
+.link-guardian-wrap .lg-form-row .lg-field--type {
+	flex: 0 0 200px;
+}
+
+.link-guardian-wrap .lg-form-row label {
 	display: block;
 	font-weight: 600;
 	margin-bottom: 4px;
 }
 
-.link-guardian-wrap .lg-card input[type="text"],
-.link-guardian-wrap .lg-card input[type="search"],
-.link-guardian-wrap .lg-card select {
+.link-guardian-wrap .lg-add-panel input[type="text"],
+.link-guardian-wrap .lg-add-panel select {
 	width: 100%;
+}
+
+/* Search row: input and button side by side, right-aligned above the table */
+.link-guardian-wrap .lg-search {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	justify-content: flex-end;
+	margin: 0 0 12px;
+}
+
+.link-guardian-wrap .lg-search input[type="search"] {
+	width: 280px;
+	max-width: 100%;
 }
 
 /* Badges + status dots */
