@@ -367,6 +367,18 @@ class Link_Guardian_Redirects {
 
 			$absolute = self::absolute_target( $target );
 
+			// Open-redirect guard: the redirect host must never be derived from a
+			// visitor-supplied capture. An off-site target is only honoured when the
+			// host is literal in the rule's template (captures stripped) — otherwise
+			// a rule like "/go/* -> *" would let any visitor redirect anywhere.
+			if ( ! self::is_same_host( $absolute ) ) {
+				$template_host = wp_parse_url( self::absolute_target( self::strip_captures( $rule->target_url, $rule->match_type ) ), PHP_URL_HOST );
+				$result_host   = wp_parse_url( $absolute, PHP_URL_HOST );
+				if ( empty( $template_host ) || strtolower( (string) $template_host ) !== strtolower( (string) $result_host ) ) {
+					continue;
+				}
+			}
+
 			// Same-path guard so a pattern can never redirect a URL onto itself.
 			if ( self::is_same_host( $absolute ) && self::normalize_path( $absolute ) === $path ) {
 				continue;
@@ -408,6 +420,22 @@ class Link_Guardian_Redirects {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Remove capture placeholders from a target template, leaving only its
+	 * literal parts (used by the open-redirect host check).
+	 *
+	 * @param string $target     Target template.
+	 * @param string $match_type wildcard|regex.
+	 * @return string
+	 */
+	protected static function strip_captures( $target, $match_type ) {
+		$target = (string) $target;
+		if ( 'wildcard' === $match_type ) {
+			return str_replace( '*', '', $target );
+		}
+		return (string) preg_replace( '/\$\{?\d+\}?|\\\\\d+/', '', $target );
 	}
 
 	/**

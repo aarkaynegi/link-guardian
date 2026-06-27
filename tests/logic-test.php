@@ -224,6 +224,18 @@ check( 'pattern target rejects javascript:', Link_Guardian_Redirects::sanitize_p
 check( 'pattern target keeps capture ref', Link_Guardian_Redirects::sanitize_pattern_target( '/x/$1' ), '/x/$1' );
 check( 'match_type sanitises unknown -> exact', Link_Guardian_Redirects::sanitize_match_type( 'bogus' ), 'exact' );
 
+echo "\n# open-redirect guard (host must not come from a visitor capture)\n";
+$R->rules = array();
+$R->add( '/go/*', '*', 1, 0, 301, 'wildcard' );
+check( 'bare-capture wildcard cannot redirect off-site', $R->match_pattern( '/go/http://evil.com' ), null );
+$R->rules = array();
+$R->add( '^/r/(.*)$', '$1', 1, 0, 301, 'regex' );
+check( 'bare-capture regex cannot redirect off-site', $R->match_pattern( '/r/https://evil.com' ), null );
+$R->rules = array();
+$R->add( '/ext/*', 'https://trusted.example/*', 1, 0, 301, 'wildcard' );
+$ext = $R->match_pattern( '/ext/page' );
+check( 'literal external host (admin intent) is allowed', $ext && 'https://trusted.example/page' === $ext['target'], true );
+
 echo "\n----------------------------------------\n";
 echo "RESULT: {$pass} passed, {$fail} failed\n";
 exit( $fail > 0 ? 1 : 0 );

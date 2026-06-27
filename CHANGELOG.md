@@ -19,6 +19,7 @@ All notable changes to **Link Guardian** are documented here. The format follows
 - Full-width, collapsible Add/Edit panel and an inline search row.
 
 ### Security
+- **Open-redirect guard for pattern rules**: a pattern's redirect host can never be supplied by a visitor capture — off-site targets are only honoured when the host is literal in the rule's template.
 - Dangerous redirect targets (`javascript:`, `data:`, protocol-relative `//host`) rejected at the data layer.
 - Cross-content link rewriting gated behind the `edit_others_posts` capability.
 - Broken-link scanner restricted to same-host probes (no redirect-following; TLS verified).
