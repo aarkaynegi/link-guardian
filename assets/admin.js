@@ -118,12 +118,19 @@
 		} ).join( ' <span class="lg-arrow">&rarr;</span> ' );
 	}
 
+	function ucfirst( str ) {
+		str = String( str || '' );
+		return str.charAt( 0 ).toUpperCase() + str.slice( 1 );
+	}
+
 	function renderAudit( data, $sum, $body ) {
 		var s = data.summary || {};
+		var patternIssue = ( s.pattern_loops || s.pattern_invalid ) ? 'warn' : 'n';
 
 		$sum.prop( 'hidden', false ).html(
 			pill( s.total, 'Total' ) +
-			pill( s.active, 'Active' ) +
+			pill( s.exact, 'Exact' ) +
+			pill( s.patterns, 'Patterns', patternIssue ) +
 			pill( s.loops, 'Loops', s.loops ? 'bad' : 'good' ) +
 			pill( s.chains, 'Chains', s.chains ? 'warn' : 'good' ) +
 			pill( s.connected, 'Connected', s.connected ? 'warn' : 'n' )
@@ -153,6 +160,21 @@
 		if ( data.broken_dest && data.broken_dest.length ) {
 			html += section( cfg.i18n.deadHd, data.broken_dest.map( function ( c ) {
 				return '<li>' + arrow( [ c.source, c.terminal ] ) + '</li>';
+			} ).join( '' ) );
+		}
+
+		if ( data.patterns && data.patterns.length ) {
+			html += section( cfg.i18n.patternsHd, data.patterns.map( function ( p ) {
+				var flags = '';
+				if ( ! p.valid ) {
+					flags += ' <span class="lg-flag lg-flag--bad">' + esc( cfg.i18n.invalid ) + '</span>';
+				}
+				if ( p.self_loop ) {
+					flags += ' <span class="lg-flag lg-flag--warn">' + esc( cfg.i18n.mayLoop ) + '</span>';
+				}
+				var exc = p.exceptions ? ' <span class="lg-muted">(' + p.exceptions + ' exc.)</span>' : '';
+				return '<li><span class="lg-badge lg-badge--pattern">' + esc( ucfirst( p.match_type ) ) + '</span> ' +
+					arrow( [ p.source, p.target ] ) + exc + flags + '</li>';
 			} ).join( '' ) );
 		}
 

@@ -968,20 +968,26 @@ class Link_Guardian_Redirects {
 	}
 
 	/**
-	 * Audit every redirect: surface loops, multi-hop chains, and "connected"
-	 * rules whose target is itself another rule's source. Powers the REST API.
+	 * Audit every redirect. Exact rules are analysed for loops, multi-hop chains,
+	 * "connected" links, and dead-end targets; pattern (wildcard/regex) rules are
+	 * listed and checked for self-loops and invalid expressions. Powers the REST API.
 	 *
 	 * @return array
 	 */
 	public function audit() {
 		$all      = $this->get_all();
-		$active   = array();
+		$exact    = array(); // Active exact rules, keyed by source.
+		$patterns = array(); // Active pattern rules.
 		$inactive = 0;
 		$auto     = 0;
 
 		foreach ( $all as $rule ) {
 			if ( 1 === (int) $rule->is_active ) {
-				$active[ $rule->source_path ] = $rule;
+				if ( 'exact' === $rule->match_type ) {
+					$exact[ $rule->source_path ] = $rule;
+				} else {
+					$patterns[] = $rule;
+				}
 			} else {
 				++$inactive;
 			}
@@ -990,13 +996,14 @@ class Link_Guardian_Redirects {
 			}
 		}
 
+		// --- Exact-rule analysis (walk_chain only follows exact sources) ---
 		$loops       = array();
 		$loop_keys   = array();
 		$chains      = array();
 		$connected   = array();
 		$broken_dest = array();
 
-		foreach ( $active as $source => $rule ) {
+		foreach ( $exact as $source => $rule ) {
 			$walk = $this->walk_chain( $source );
 
 			if ( $walk['loop'] ) {
@@ -1006,7 +1013,6 @@ class Link_Guardian_Redirects {
 					$loops[]           = $walk['hops'];
 				}
 			} elseif ( count( $walk['hops'] ) > 2 ) {
-				// More than one hop = a chain we collapse at serve time.
 				$chains[] = array(
 					'source'   => $source,
 					'path'     => $walk['hops'],
@@ -1016,17 +1022,15 @@ class Link_Guardian_Redirects {
 				);
 			}
 
-			// "Connected": this rule's direct target is itself an active source.
 			$direct_abs = self::absolute_target( $rule->target_url );
 			if ( self::is_same_host( $direct_abs ) ) {
 				$direct_path = self::normalize_path( $direct_abs );
-				if ( isset( $active[ $direct_path ] ) ) {
+				if ( isset( $exact[ $direct_path ] ) ) {
 					$connected[] = array(
 						'source' => $source,
 						'target' => $direct_path,
 					);
 				} elseif ( ! $walk['loop'] && ! $walk['external'] && 0 === url_to_postid( $direct_abs ) ) {
-					// Terminal target that resolves to no known post (possible dead end).
 					$broken_dest[] = array(
 						'source'   => $source,
 						'terminal' => $walk['terminal'],
@@ -1035,21 +1039,86 @@ class Link_Guardian_Redirects {
 			}
 		}
 
+		// --- Pattern-rule analysis (self-loop heuristic + validity) ---
+		$pattern_rows    = array();
+		$pattern_loops   = 0;
+		$pattern_invalid = 0;
+
+		foreach ( $patterns as $rule ) {
+			$valid            = ( null !== self::compile_pattern( $rule->source_path, $rule->match_type ) );
+			$self_loop        = $valid && self::pattern_self_loops( $rule );
+			$pattern_invalid += $valid ? 0 : 1;
+			$pattern_loops   += $self_loop ? 1 : 0;
+
+			$pattern_rows[] = array(
+				'source'     => $rule->source_path,
+				'match_type' => $rule->match_type,
+				'target'     => $rule->target_url,
+				'exceptions' => self::count_exceptions( isset( $rule->exceptions ) ? $rule->exceptions : '' ),
+				'valid'      => $valid,
+				'self_loop'  => $self_loop,
+			);
+		}
+
 		return array(
 			'summary'     => array(
-				'total'     => count( $all ),
-				'active'    => count( $active ),
-				'inactive'  => $inactive,
-				'auto'      => $auto,
-				'loops'     => count( $loops ),
-				'chains'    => count( $chains ),
-				'connected' => count( $connected ),
+				'total'           => count( $all ),
+				'exact'           => count( $exact ),
+				'patterns'        => count( $patterns ),
+				'inactive'        => $inactive,
+				'auto'            => $auto,
+				'loops'           => count( $loops ),
+				'chains'          => count( $chains ),
+				'connected'       => count( $connected ),
+				'pattern_loops'   => $pattern_loops,
+				'pattern_invalid' => $pattern_invalid,
 			),
 			'loops'       => $loops,
 			'chains'      => $chains,
 			'connected'   => $connected,
 			'broken_dest' => $broken_dest,
+			'patterns'    => $pattern_rows,
 		);
+	}
+
+	/**
+	 * Count the non-empty lines in an exceptions list.
+	 *
+	 * @param string $exceptions Raw exceptions text.
+	 * @return int
+	 */
+	protected static function count_exceptions( $exceptions ) {
+		$exceptions = (string) $exceptions;
+		if ( '' === trim( $exceptions ) ) {
+			return 0;
+		}
+		return count( array_filter( array_map( 'trim', preg_split( '/\r\n|\r|\n/', $exceptions ) ) ) );
+	}
+
+	/**
+	 * Heuristic: would a pattern's own output feed back into its source (a loop)?
+	 * Builds a concrete target by filling captures with sample values and checks
+	 * whether the source pattern re-matches it. Only same-host outputs can loop.
+	 *
+	 * @param object $rule Pattern rule row.
+	 * @return bool
+	 */
+	protected static function pattern_self_loops( $rule ) {
+		$regex = self::compile_pattern( $rule->source_path, $rule->match_type );
+		if ( null === $regex ) {
+			return false;
+		}
+		$template = ( 'wildcard' === $rule->match_type )
+			? str_replace( '*', '{LGX}', (string) $rule->target_url )
+			: (string) preg_replace( '/\$\{?\d+\}?|\\\\\d+/', '{LGX}', (string) $rule->target_url );
+
+		foreach ( array( 'lg-sample', '1', 'a' ) as $sample ) {
+			$abs = self::absolute_target( str_replace( '{LGX}', $sample, $template ) );
+			if ( self::is_same_host( $abs ) && self::bounded_match( $regex, self::normalize_path( $abs ) ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

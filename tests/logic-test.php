@@ -249,6 +249,19 @@ $R->add( '/old/*', '/new/*', 1, 0, 301, 'wildcard' );
 $chain = $R->resolve_pattern_chain( '/old/page' );
 check( 'normal pattern resolves to terminal', $chain && false !== strpos( $chain['target'], '/new/page' ), true );
 
+echo "\n# audit with mixed exact + pattern rules\n";
+$R->rules = array();
+$R->add( '/a', '/b', 1, 0 );
+$R->add( '/b', '/c', 1, 0 );
+$R->add( '/blog/*', '/blog/archive/*', 1, 0, 301, 'wildcard' );
+$R->add( '/clean/*', '/done/*', 1, 0, 301, 'wildcard' );
+$au = $R->audit();
+check( 'audit separates exact count', $au['summary']['exact'], 2 );
+check( 'audit separates pattern count', $au['summary']['patterns'], 2 );
+check( 'audit finds the exact chain', $au['summary']['chains'] >= 1, true );
+check( 'audit flags exactly one pattern self-loop', $au['summary']['pattern_loops'], 1 );
+check( 'audit lists all patterns', count( $au['patterns'] ), 2 );
+
 echo "\n----------------------------------------\n";
 echo "RESULT: {$pass} passed, {$fail} failed\n";
 exit( $fail > 0 ? 1 : 0 );

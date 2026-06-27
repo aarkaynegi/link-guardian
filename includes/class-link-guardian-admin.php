@@ -172,19 +172,22 @@ class Link_Guardian_Admin {
 				'restUrl'      => esc_url_raw( trailingslashit( rest_url( Link_Guardian_REST::NAMESPACE ) ) ),
 				'restNonce'    => wp_create_nonce( 'wp_rest' ),
 				'i18n'         => array(
-					'scanning' => __( 'Scanning…', 'link-guardian' ),
-					'done'     => __( 'Scan complete.', 'link-guardian' ),
-					'noBroken' => __( 'No broken internal links found. ', 'link-guardian' ),
-					'foundOne' => __( 'broken link found so far…', 'link-guardian' ),
-					'error'    => __( 'Something went wrong during the scan.', 'link-guardian' ),
-					'fixLabel' => __( 'Create redirect', 'link-guardian' ),
-					'auditing' => __( 'Analysing redirects…', 'link-guardian' ),
-					'auditErr' => __( 'Could not load the audit.', 'link-guardian' ),
-					'allClear' => __( 'All clear — no loops, chains, or dead ends found.', 'link-guardian' ),
-					'loopsHd'  => __( 'Redirect loops (blocked at serve time)', 'link-guardian' ),
-					'chainsHd' => __( 'Multi-hop chains (auto-collapsed to one hop)', 'link-guardian' ),
-					'connHd'   => __( 'Connected links (a target is itself a redirect)', 'link-guardian' ),
-					'deadHd'   => __( 'Dead-end targets (resolve to no known post)', 'link-guardian' ),
+					'scanning'   => __( 'Scanning…', 'link-guardian' ),
+					'done'       => __( 'Scan complete.', 'link-guardian' ),
+					'noBroken'   => __( 'No broken internal links found. ', 'link-guardian' ),
+					'foundOne'   => __( 'broken link found so far…', 'link-guardian' ),
+					'error'      => __( 'Something went wrong during the scan.', 'link-guardian' ),
+					'fixLabel'   => __( 'Create redirect', 'link-guardian' ),
+					'auditing'   => __( 'Analysing redirects…', 'link-guardian' ),
+					'auditErr'   => __( 'Could not load the audit.', 'link-guardian' ),
+					'allClear'   => __( 'All clear — no loops, chains, or dead ends found.', 'link-guardian' ),
+					'loopsHd'    => __( 'Redirect loops (blocked at serve time)', 'link-guardian' ),
+					'chainsHd'   => __( 'Multi-hop chains (auto-collapsed to one hop)', 'link-guardian' ),
+					'connHd'     => __( 'Connected links (a target is itself a redirect)', 'link-guardian' ),
+					'deadHd'     => __( 'Dead-end targets (resolve to no known post)', 'link-guardian' ),
+					'patternsHd' => __( 'Pattern rules (wildcard / regex)', 'link-guardian' ),
+					'invalid'    => __( 'invalid', 'link-guardian' ),
+					'mayLoop'    => __( 'may loop', 'link-guardian' ),
 				),
 			)
 		);
@@ -735,7 +738,7 @@ class Link_Guardian_Admin {
 		<div class="wrap link-guardian-wrap">
 			<h1><?php esc_html_e( 'Link Guardian — Redirect Audit', 'link-guardian' ); ?></h1>
 			<p class="description">
-				<?php esc_html_e( 'Checks every redirect in one pass: loops, multi-hop chains, connected links, and dead-end targets. Powered by the Link Guardian REST API.', 'link-guardian' ); ?>
+				<?php esc_html_e( 'Checks every redirect in one pass: exact-rule loops, multi-hop chains, connected links, and dead-end targets, plus a listing of wildcard/regex pattern rules flagged for self-loops or invalid expressions. Powered by the Link Guardian REST API.', 'link-guardian' ); ?>
 				<code>GET <?php echo esc_html( rest_url( Link_Guardian_REST::NAMESPACE . '/audit' ) ); ?></code>
 			</p>
 
