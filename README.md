@@ -20,7 +20,8 @@ Link Guardian does all three.
 |---|---|
 | **Auto-redirect on slug change** | Hooks `post_updated`, detects slug/parent changes on published content, writes a 301 (configurable). |
 | **Auto internal-link rewrite** | Finds the old URL across all content and replaces it with the new URL (absolute + root-relative forms). Capped + filterable. |
-| **Redirect manager** | List / add / pause / delete redirects, with hit counters and auto-vs-manual badges. |
+| **Redirect manager** | List / add / **edit** / pause / delete redirects, with hit counters, search, and auto/manual + match-type badges. |
+| **Pattern redirects** | Wildcard (`/old/* → /new/*`) and regex (`$1`/`$2` capture refs), with per-pattern **exceptions** ("match all except…"). ReDoS-guarded (bounded backtrack/recursion limits, compile validation) and open-redirect-safe (a capture can never set the redirect host). |
 | **Broken-link scanner** | AJAX, batched scan of all published content for internal links that 404. One-click "create redirect" for any hit. |
 | **Loop & chain protection** | Refuses loop-forming rules at save time (any cycle length); collapses multi-hop chains to a single hop at serve time with a visited-set + hop ceiling. |
 | **REST audit API** | `GET /audit` returns every loop, chain, connected link, and dead-end in one request. |

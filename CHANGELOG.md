@@ -20,6 +20,8 @@ All notable changes to **Link Guardian** are documented here. The format follows
 
 ### Security
 - **Open-redirect guard for pattern rules**: a pattern's redirect host can never be supplied by a visitor capture — off-site targets are only honoured when the host is literal in the rule's template.
+- **Pattern loop protection**: wildcard/regex resolution follows hops with a visited-set + hop cap, so a self-growing rule (`/blog/* → /blog/archive/*`) or a two-rule cycle aborts instead of looping the browser.
+- **ReDoS bounds** on pattern matching: capped `pcre.backtrack_limit` + `pcre.recursion_limit`, compile-time validation, and length caps (over-long patterns are rejected, never silently truncated).
 - Dangerous redirect targets (`javascript:`, `data:`, protocol-relative `//host`) rejected at the data layer.
 - Cross-content link rewriting gated behind the `edit_others_posts` capability.
 - Broken-link scanner restricted to same-host probes (no redirect-following; TLS verified).

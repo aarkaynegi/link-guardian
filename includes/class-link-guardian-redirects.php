@@ -175,8 +175,14 @@ class Link_Guardian_Redirects {
 			return false;
 		}
 
-		$type     = in_array( (int) $args['redirect_type'], array( 301, 302, 307, 308 ), true ) ? (int) $args['redirect_type'] : 301;
-		$existing = $this->get_by_source( $source );
+		$type = in_array( (int) $args['redirect_type'], array( 301, 302, 307, 308 ), true ) ? (int) $args['redirect_type'] : 301;
+
+		// Find the existing row to update. Exact rules look up by normalised path;
+		// pattern rules are stored verbatim, so they must look up by literal source
+		// (normalize_path() would mangle a regex and clobber an unrelated row).
+		$existing = ( 'exact' === $match_type )
+			? $this->get_by_source( $source )
+			: $this->get_row_by_exact_source( $source );
 
 		$data    = array(
 			'source_path'   => $source,
@@ -235,8 +241,10 @@ class Link_Guardian_Redirects {
 		if ( '' === $source ) {
 			return '';
 		}
-		$source = substr( $source, 0, 190 );
-		return ( 'wildcard' === $match_type ) ? '/' . ltrim( $source, '/' ) : $source;
+		// Reject (rather than silently truncate) anything that would not fit the
+		// indexed source_path column, so an over-long pattern fails predictably.
+		$result = ( 'wildcard' === $match_type ) ? '/' . ltrim( $source, '/' ) : $source;
+		return ( strlen( $result ) > 190 ) ? '' : $result;
 	}
 
 	/**
@@ -313,11 +321,16 @@ class Link_Guardian_Redirects {
 	 * @return bool True on match.
 	 */
 	protected static function bounded_match( $regex, $subject ) {
-		$previous = ini_get( 'pcre.backtrack_limit' );
+		$prev_backtrack = ini_get( 'pcre.backtrack_limit' );
+		$prev_recursion = ini_get( 'pcre.recursion_limit' );
 		ini_set( 'pcre.backtrack_limit', '100000' ); // phpcs:ignore WordPress.PHP.IniSet.Risky
+		ini_set( 'pcre.recursion_limit', '10000' );  // phpcs:ignore WordPress.PHP.IniSet.Risky
 		$result = @preg_match( $regex, $subject ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-		if ( false !== $previous ) {
-			ini_set( 'pcre.backtrack_limit', $previous ); // phpcs:ignore WordPress.PHP.IniSet.Risky
+		if ( false !== $prev_backtrack ) {
+			ini_set( 'pcre.backtrack_limit', $prev_backtrack ); // phpcs:ignore WordPress.PHP.IniSet.Risky
+		}
+		if ( false !== $prev_recursion ) {
+			ini_set( 'pcre.recursion_limit', $prev_recursion ); // phpcs:ignore WordPress.PHP.IniSet.Risky
 		}
 		return 1 === $result;
 	}
@@ -391,6 +404,74 @@ class Link_Guardian_Redirects {
 			);
 		}
 		return null;
+	}
+
+	/**
+	 * Resolve a path that may match a pattern rule, following any further hops
+	 * (exact or pattern) with a visited-set + hop cap, so pattern rules can never
+	 * create an infinite browser redirect loop (e.g. /blog/* -> /blog/archive/*).
+	 *
+	 * @param string $path Requested path.
+	 * @return array|null { @type string $target, @type int $type, @type int $first_id } or null.
+	 */
+	public function resolve_pattern_chain( $path ) {
+		$visited = array( $path => true );
+		$current = $path;
+		$first   = null;
+		$hops    = 0;
+
+		while ( true ) {
+			$rule = $this->get_active_by_source( $current );
+			if ( $rule ) {
+				$absolute = self::absolute_target( $rule->target_url );
+				$type     = (int) $rule->redirect_type;
+				$id       = (int) $rule->id;
+			} else {
+				$match = $this->match_pattern( $current );
+				if ( null === $match ) {
+					break; // Terminal: nothing redirects this path.
+				}
+				$absolute = $match['target'];
+				$type     = $match['type'];
+				$id       = $match['first_id'];
+			}
+
+			if ( null === $first ) {
+				$first = array(
+					'type' => in_array( $type, array( 301, 302, 307, 308 ), true ) ? $type : 301,
+					'id'   => $id,
+				);
+			}
+
+			// An off-site target ends the chain.
+			if ( ! self::is_same_host( $absolute ) ) {
+				return array(
+					'target'   => $absolute,
+					'type'     => $first['type'],
+					'first_id' => $first['id'],
+				);
+			}
+
+			$next = self::normalize_path( $absolute );
+			if ( $next === $current || isset( $visited[ $next ] ) || ++$hops > self::MAX_HOPS ) {
+				$this->flag_loop( array_keys( $visited ) );
+				return null; // Loop or runaway chain — abort instead of redirecting.
+			}
+
+			$visited[ $next ] = true;
+			$current          = $next;
+		}
+
+		if ( null === $first ) {
+			return null;
+		}
+
+		// Reached a terminal path with no further rule: send the visitor there.
+		return array(
+			'target'   => self::absolute_target( $current ),
+			'type'     => $first['type'],
+			'first_id' => $first['id'],
+		);
 	}
 
 	/**
@@ -476,8 +557,22 @@ class Link_Guardian_Redirects {
 		global $wpdb;
 		$source = self::normalize_path( $source_path );
 		$table  = self::table();
-		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Custom table; name from $wpdb->prefix, value bound via prepare().
 		return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE source_path = %s", $source ) );
+	}
+
+	/**
+	 * Fetch a redirect by its exact (verbatim, un-normalised) source string.
+	 * Used for pattern rules, whose source is stored as-is.
+	 *
+	 * @param string $source Literal source string.
+	 * @return object|null
+	 */
+	public function get_row_by_exact_source( $source ) {
+		global $wpdb;
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Custom table; name from $wpdb->prefix, value bound via prepare().
+		return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE source_path = %s", (string) $source ) );
 	}
 
 	/**
@@ -682,8 +777,9 @@ class Link_Guardian_Redirects {
 		$path     = self::normalize_path( $request );
 		$resolved = $this->resolve_chain( $path );
 		if ( null === $resolved ) {
-			// No exact rule matched: fall back to wildcard / regex pattern rules.
-			$resolved = $this->match_pattern( $path );
+			// No exact rule matched: fall back to wildcard / regex pattern rules,
+			// following any further hops with loop detection.
+			$resolved = $this->resolve_pattern_chain( $path );
 		}
 		if ( null === $resolved ) {
 			return;
@@ -697,7 +793,10 @@ class Link_Guardian_Redirects {
 		$this->increment_hit( $resolved['first_id'] );
 
 		// wp_redirect (not wp_safe_redirect): admins may intentionally point a
-		// redirect off-site, and the target was sanitised on save.
+		// redirect off-site. Exact targets are sanitised on save; pattern targets
+		// can only resolve off-site to a host that is literal in the admin's
+		// template — match_pattern()'s open-redirect guard refuses any host that
+		// came from a visitor-supplied capture.
 		wp_redirect( $resolved['target'], $resolved['type'] ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect
 		exit;
 	}

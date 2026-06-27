@@ -236,6 +236,19 @@ $R->add( '/ext/*', 'https://trusted.example/*', 1, 0, 301, 'wildcard' );
 $ext = $R->match_pattern( '/ext/page' );
 check( 'literal external host (admin intent) is allowed', $ext && 'https://trusted.example/page' === $ext['target'], true );
 
+echo "\n# pattern loop protection (serve-time)\n";
+$R->rules = array();
+$R->add( '/blog/*', '/blog/archive/*', 1, 0, 301, 'wildcard' );
+check( 'self-growing pattern loop is aborted (no infinite redirect)', $R->resolve_pattern_chain( '/blog/x' ), null );
+$R->rules = array();
+$R->add( '/a/*', '/b/*', 1, 0, 301, 'wildcard' );
+$R->add( '/b/*', '/a/*', 1, 0, 301, 'wildcard' );
+check( 'two-rule pattern loop aborted', $R->resolve_pattern_chain( '/a/x' ), null );
+$R->rules = array();
+$R->add( '/old/*', '/new/*', 1, 0, 301, 'wildcard' );
+$chain = $R->resolve_pattern_chain( '/old/page' );
+check( 'normal pattern resolves to terminal', $chain && false !== strpos( $chain['target'], '/new/page' ), true );
+
 echo "\n----------------------------------------\n";
 echo "RESULT: {$pass} passed, {$fail} failed\n";
 exit( $fail > 0 ? 1 : 0 );
