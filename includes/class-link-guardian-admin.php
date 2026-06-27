@@ -172,22 +172,34 @@ class Link_Guardian_Admin {
 				'restUrl'      => esc_url_raw( trailingslashit( rest_url( Link_Guardian_REST::NAMESPACE ) ) ),
 				'restNonce'    => wp_create_nonce( 'wp_rest' ),
 				'i18n'         => array(
-					'scanning'   => __( 'Scanning…', 'link-guardian' ),
-					'done'       => __( 'Scan complete.', 'link-guardian' ),
-					'noBroken'   => __( 'No broken internal links found. ', 'link-guardian' ),
-					'foundOne'   => __( 'broken link found so far…', 'link-guardian' ),
-					'error'      => __( 'Something went wrong during the scan.', 'link-guardian' ),
-					'fixLabel'   => __( 'Create redirect', 'link-guardian' ),
-					'auditing'   => __( 'Analysing redirects…', 'link-guardian' ),
-					'auditErr'   => __( 'Could not load the audit.', 'link-guardian' ),
-					'allClear'   => __( 'All clear — no loops, chains, or dead ends found.', 'link-guardian' ),
-					'loopsHd'    => __( 'Redirect loops (blocked at serve time)', 'link-guardian' ),
-					'chainsHd'   => __( 'Multi-hop chains (auto-collapsed to one hop)', 'link-guardian' ),
-					'connHd'     => __( 'Connected links (a target is itself a redirect)', 'link-guardian' ),
-					'deadHd'     => __( 'Dead-end targets (resolve to no known post)', 'link-guardian' ),
-					'patternsHd' => __( 'Pattern rules (wildcard / regex)', 'link-guardian' ),
-					'invalid'    => __( 'invalid', 'link-guardian' ),
-					'mayLoop'    => __( 'may loop', 'link-guardian' ),
+					'scanning'     => __( 'Scanning…', 'link-guardian' ),
+					'done'         => __( 'Scan complete.', 'link-guardian' ),
+					'noBroken'     => __( 'No broken internal links found.', 'link-guardian' ),
+					'noContent'    => __( 'No published posts or pages to scan yet.', 'link-guardian' ),
+					'foundOne'     => __( 'broken link found.', 'link-guardian' ),
+					'foundMany'    => __( 'broken links found.', 'link-guardian' ),
+					'error'        => __( 'Something went wrong during the scan.', 'link-guardian' ),
+					'fixLabel'     => __( 'Create redirect', 'link-guardian' ),
+					'auditing'     => __( 'Analysing redirects…', 'link-guardian' ),
+					'auditErr'     => __( 'Could not load the audit.', 'link-guardian' ),
+					'allClear'     => __( 'All clear — no loops, chains, or dead ends found.', 'link-guardian' ),
+					'loopsHd'      => __( 'Redirect loops (blocked at serve time)', 'link-guardian' ),
+					'chainsHd'     => __( 'Multi-hop chains (auto-collapsed to one hop)', 'link-guardian' ),
+					'connHd'       => __( 'Connected links (a target is itself a redirect)', 'link-guardian' ),
+					'deadHd'       => __( 'Dead-end targets (resolve to no known post)', 'link-guardian' ),
+					'patternsHd'   => __( 'Pattern rules (wildcard / regex)', 'link-guardian' ),
+					'invalid'      => __( 'invalid', 'link-guardian' ),
+					'mayLoop'      => __( 'may loop', 'link-guardian' ),
+					'untitled'     => __( '(untitled)', 'link-guardian' ),
+					'hops'         => __( 'hops', 'link-guardian' ),
+					'exc'          => __( 'exc.', 'link-guardian' ),
+					'lblTotal'     => __( 'Total', 'link-guardian' ),
+					'lblExact'     => __( 'Exact', 'link-guardian' ),
+					'lblPatterns'  => __( 'Patterns', 'link-guardian' ),
+					'lblLoops'     => __( 'Loops', 'link-guardian' ),
+					'lblChains'    => __( 'Chains', 'link-guardian' ),
+					'lblConnected' => __( 'Connected', 'link-guardian' ),
+					'lblDead'      => __( 'Dead-ends', 'link-guardian' ),
 				),
 			)
 		);
@@ -527,6 +539,8 @@ class Link_Guardian_Admin {
 								<select id="lg-type" name="redirect_type">
 									<option value="301" <?php selected( (int) $edit_row->redirect_type, 301 ); ?>><?php esc_html_e( '301 — Permanent', 'link-guardian' ); ?></option>
 									<option value="302" <?php selected( (int) $edit_row->redirect_type, 302 ); ?>><?php esc_html_e( '302 — Temporary', 'link-guardian' ); ?></option>
+									<option value="307" <?php selected( (int) $edit_row->redirect_type, 307 ); ?>><?php esc_html_e( '307 — Temporary (keep method)', 'link-guardian' ); ?></option>
+									<option value="308" <?php selected( (int) $edit_row->redirect_type, 308 ); ?>><?php esc_html_e( '308 — Permanent (keep method)', 'link-guardian' ); ?></option>
 								</select>
 							</div>
 						</div>
@@ -569,6 +583,8 @@ class Link_Guardian_Admin {
 								<select id="lg-type" name="redirect_type">
 									<option value="301"><?php esc_html_e( '301 — Permanent', 'link-guardian' ); ?></option>
 									<option value="302"><?php esc_html_e( '302 — Temporary', 'link-guardian' ); ?></option>
+									<option value="307"><?php esc_html_e( '307 — Temporary (keep method)', 'link-guardian' ); ?></option>
+									<option value="308"><?php esc_html_e( '308 — Permanent (keep method)', 'link-guardian' ); ?></option>
 								</select>
 							</div>
 						</div>
@@ -605,7 +621,16 @@ class Link_Guardian_Admin {
 						</thead>
 						<tbody>
 						<?php if ( empty( $data['items'] ) ) : ?>
-							<tr><td colspan="8"><?php esc_html_e( 'No redirects yet. Change a published slug and one will appear here automatically.', 'link-guardian' ); ?></td></tr>
+							<tr><td colspan="8">
+								<?php if ( '' !== $search ) : ?>
+									<?php
+									/* translators: %s: the search term. */
+									printf( esc_html__( 'No redirects match “%s”. Clear the search to see all redirects.', 'link-guardian' ), esc_html( $search ) );
+									?>
+								<?php else : ?>
+									<?php esc_html_e( 'No redirects yet. Add one above, or change a published slug and one will be created automatically.', 'link-guardian' ); ?>
+								<?php endif; ?>
+							</td></tr>
 						<?php else : ?>
 							<?php foreach ( $data['items'] as $row ) : ?>
 								<tr>
@@ -707,8 +732,8 @@ class Link_Guardian_Admin {
 			</p>
 
 			<div id="lg-scan-progress" class="lg-progress" hidden>
-				<div class="lg-progress__bar"><span></span></div>
-				<p class="lg-progress__label"></p>
+				<div class="lg-progress__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+				<p class="lg-progress__label" role="status" aria-live="polite"></p>
 			</div>
 
 			<table class="wp-list-table widefat fixed striped" id="lg-scan-results" hidden>
@@ -747,7 +772,7 @@ class Link_Guardian_Admin {
 			</p>
 
 			<div id="lg-audit-summary" class="lg-summary" hidden></div>
-			<div id="lg-audit-body"></div>
+			<div id="lg-audit-body" role="status" aria-live="polite"></div>
 		</div>
 		<?php
 	}

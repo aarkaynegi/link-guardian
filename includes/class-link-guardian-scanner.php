@@ -307,9 +307,10 @@ class Link_Guardian_Scanner {
 		// closes the open-redirect SSRF vector; a 3xx is < 400 so the link is
 		// still correctly treated as reachable. TLS verification stays on.
 		$args = array(
-			'timeout'     => 3,
-			'redirection' => 0,
-			'user-agent'  => 'LinkGuardian/' . LINK_GUARDIAN_VERSION,
+			'timeout'             => 3,
+			'redirection'         => 0,
+			'limit_response_size' => 131072, // We only read the status code; never buffer a full body.
+			'user-agent'          => 'LinkGuardian/' . LINK_GUARDIAN_VERSION,
 		);
 
 		$response = wp_remote_head( $absolute, $args );

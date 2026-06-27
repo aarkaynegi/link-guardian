@@ -9,7 +9,8 @@
 		var $btn      = $( '#lg-scan-start' );
 		var total     = parseInt( $btn.data( 'total' ), 10 ) || 0;
 		var $progress = $( '#lg-scan-progress' );
-		var $bar      = $progress.find( '.lg-progress__bar span' );
+		var $barEl    = $progress.find( '.lg-progress__bar' );
+		var $bar      = $barEl.find( 'span' );
 		var $label    = $progress.find( '.lg-progress__label' );
 		var $results  = $( '#lg-scan-results' );
 		var $tbody    = $results.find( 'tbody' );
@@ -22,7 +23,7 @@
 		$bar.css( 'width', '0%' );
 
 		if ( 0 === total ) {
-			$label.text( cfg.i18n.noBroken );
+			$label.text( cfg.i18n.noContent );
 			$btn.prop( 'disabled', false );
 			return;
 		}
@@ -43,6 +44,7 @@
 				var d   = resp.data;
 				var pct = d.total ? Math.round( ( d.processed / d.total ) * 100 ) : 100;
 				$bar.css( 'width', pct + '%' );
+				$barEl.attr( 'aria-valuenow', pct );
 
 				if ( d.broken && d.broken.length ) {
 					d.broken.forEach( function ( item ) {
@@ -54,10 +56,11 @@
 
 				if ( d.done ) {
 					$bar.css( 'width', '100%' );
-					$label.text(
-						cfg.i18n.done + ' ' +
-						( brokenCount ? brokenCount + ' ' + cfg.i18n.foundOne : cfg.i18n.noBroken )
-					);
+					$barEl.attr( 'aria-valuenow', 100 );
+					var tally = brokenCount
+						? brokenCount + ' ' + ( 1 === brokenCount ? cfg.i18n.foundOne : cfg.i18n.foundMany )
+						: cfg.i18n.noBroken;
+					$label.text( cfg.i18n.done + ' ' + tally );
 					$btn.prop( 'disabled', false );
 				} else {
 					$label.text( cfg.i18n.scanning + ' ' + d.processed + ' / ' + d.total );
@@ -77,9 +80,9 @@
 
 		var $found = $( '<td/>' );
 		if ( item.edit_link ) {
-			$found.append( $( '<a/>', { href: item.edit_link, text: item.post_title || '(untitled)' } ) );
+			$found.append( $( '<a/>', { href: item.edit_link, text: item.post_title || cfg.i18n.untitled } ) );
 		} else {
-			$found.text( item.post_title || '(untitled)' );
+			$found.text( item.post_title || cfg.i18n.untitled );
 		}
 
 		var $url = $( '<td/>' ).append( $( '<code/>', { text: item.url } ) );
@@ -102,8 +105,9 @@
 		return $( '<div/>' ).text( null === str || undefined === str ? '' : String( str ) ).html();
 	}
 
-	function pill( val, label, tone ) {
-		return '<span class="lg-pill lg-pill--' + ( tone || 'n' ) + '">' +
+	function pill( val, label, tone, title ) {
+		return '<span class="lg-pill lg-pill--' + ( tone || 'n' ) + '"' +
+			( title ? ' title="' + esc( title ) + '"' : '' ) + '>' +
 			'<strong>' + ( val || 0 ) + '</strong> ' + esc( label ) + '</span>';
 	}
 
@@ -127,13 +131,16 @@
 		var s = data.summary || {};
 		var patternIssue = ( s.pattern_loops || s.pattern_invalid ) ? 'warn' : 'n';
 
+		var deadCount = ( data.broken_dest && data.broken_dest.length ) || 0;
+
 		$sum.prop( 'hidden', false ).html(
-			pill( s.total, 'Total' ) +
-			pill( s.exact, 'Exact' ) +
-			pill( s.patterns, 'Patterns', patternIssue ) +
-			pill( s.loops, 'Loops', s.loops ? 'bad' : 'good' ) +
-			pill( s.chains, 'Chains', s.chains ? 'warn' : 'good' ) +
-			pill( s.connected, 'Connected', s.connected ? 'warn' : 'n' )
+			pill( s.total, cfg.i18n.lblTotal ) +
+			pill( s.exact, cfg.i18n.lblExact ) +
+			pill( s.patterns, cfg.i18n.lblPatterns, patternIssue, cfg.i18n.patternsHd ) +
+			pill( s.loops, cfg.i18n.lblLoops, s.loops ? 'bad' : 'good', cfg.i18n.loopsHd ) +
+			pill( s.chains, cfg.i18n.lblChains, s.chains ? 'warn' : 'good', cfg.i18n.chainsHd ) +
+			pill( s.connected, cfg.i18n.lblConnected, s.connected ? 'warn' : 'n', cfg.i18n.connHd ) +
+			pill( deadCount, cfg.i18n.lblDead, deadCount ? 'bad' : 'good', cfg.i18n.deadHd )
 		);
 
 		var html = '';
@@ -147,7 +154,7 @@
 		if ( data.chains && data.chains.length ) {
 			html += section( cfg.i18n.chainsHd, data.chains.map( function ( c ) {
 				return '<li>' + arrow( c.path ) +
-					' <span class="lg-muted">(' + ( c.hops || 0 ) + ' hops)</span></li>';
+					' <span class="lg-muted">(' + ( c.hops || 0 ) + ' ' + cfg.i18n.hops + ')</span></li>';
 			} ).join( '' ) );
 		}
 
@@ -172,7 +179,7 @@
 				if ( p.self_loop ) {
 					flags += ' <span class="lg-flag lg-flag--warn">' + esc( cfg.i18n.mayLoop ) + '</span>';
 				}
-				var exc = p.exceptions ? ' <span class="lg-muted">(' + p.exceptions + ' exc.)</span>' : '';
+				var exc = p.exceptions ? ' <span class="lg-muted">(' + p.exceptions + ' ' + cfg.i18n.exc + ')</span>' : '';
 				return '<li><span class="lg-badge lg-badge--pattern">' + esc( ucfirst( p.match_type ) ) + '</span> ' +
 					arrow( [ p.source, p.target ] ) + exc + flags + '</li>';
 			} ).join( '' ) );
@@ -204,7 +211,7 @@
 		} ).done( function ( data ) {
 			renderAudit( data, $sum, $body );
 		} ).fail( function () {
-			$body.html( '<div class="notice notice-error inline"><p>' + esc( cfg.i18n.auditErr ) + '</p></div>' );
+			$body.html( '<div class="notice notice-error inline" role="alert"><p>' + esc( cfg.i18n.auditErr ) + '</p></div>' );
 		} ).always( function () {
 			$btn.prop( 'disabled', false ).text( label );
 		} );

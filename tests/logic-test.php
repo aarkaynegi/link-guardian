@@ -223,6 +223,9 @@ check( 'valid wildcard compiles', is_string( Link_Guardian_Redirects::compile_pa
 check( 'pattern target rejects javascript:', Link_Guardian_Redirects::sanitize_pattern_target( 'javascript:alert(1)' ), '' );
 check( 'pattern target keeps capture ref', Link_Guardian_Redirects::sanitize_pattern_target( '/x/$1' ), '/x/$1' );
 check( 'match_type sanitises unknown -> exact', Link_Guardian_Redirects::sanitize_match_type( 'bogus' ), 'exact' );
+check( 'normalize_type keeps 308', Link_Guardian_Redirects::normalize_type( 308 ), 308 );
+check( 'normalize_type rejects 200 -> 301', Link_Guardian_Redirects::normalize_type( 200 ), 301 );
+check( 'pattern target still rejects protocol-relative', Link_Guardian_Redirects::sanitize_pattern_target( '//evil.com/$1' ), '' );
 
 echo "\n# open-redirect guard (host must not come from a visitor capture)\n";
 $R->rules = array();

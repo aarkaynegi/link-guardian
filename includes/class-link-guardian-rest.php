@@ -152,15 +152,33 @@ class Link_Guardian_REST {
 	 * @return WP_REST_Response
 	 */
 	public function trace( WP_REST_Request $request ) {
-		$url  = (string) $request->get_param( 'url' );
-		$path = Link_Guardian_Redirects::normalize_path( $url );
-		$walk = $this->redirects->walk_chain( $path );
+		$url     = (string) $request->get_param( 'url' );
+		$path    = Link_Guardian_Redirects::normalize_path( $url );
+		$walk    = $this->redirects->walk_chain( $path );
+		$pattern = false;
+
+		// The front end falls back to wildcard/regex rules when no exact rule
+		// matches, so trace must too — otherwise a pattern-covered URL would be
+		// reported as not redirected.
+		if ( ! $walk['matched'] ) {
+			$pat = $this->redirects->resolve_pattern_chain( $path );
+			if ( null !== $pat ) {
+				$pattern          = true;
+				$walk['matched']  = true;
+				$walk['first_id'] = $pat['first_id'];
+				$walk['type']     = $pat['type'];
+				$walk['terminal'] = $pat['target'];
+				$walk['external'] = ! Link_Guardian_Redirects::is_same_host( $pat['target'] );
+				$walk['hops']     = array( $path, $pat['target'] );
+			}
+		}
 
 		return new WP_REST_Response(
 			array(
 				'input'    => $url,
 				'path'     => $path,
 				'matched'  => (bool) $walk['matched'],
+				'pattern'  => $pattern,
 				'loop'     => (bool) $walk['loop'],
 				'external' => (bool) $walk['external'],
 				'hops'     => $walk['hops'],

@@ -21,6 +21,43 @@ class Link_Guardian_Redirects {
 	const MAX_HOPS = 25;
 
 	/**
+	 * Longest source the indexed source_path column can hold (see the
+	 * varchar(190) column in Link_Guardian_Activator::create_table()).
+	 */
+	const MAX_SOURCE_LEN = 190;
+
+	/**
+	 * The HTTP status codes a redirect rule may use.
+	 */
+	const REDIRECT_TYPES = array( 301, 302, 307, 308 );
+
+	/**
+	 * Normalise a redirect status code, falling back to 301.
+	 *
+	 * @param mixed $type Raw type.
+	 * @return int
+	 */
+	public static function normalize_type( $type ) {
+		$type = (int) $type;
+		return in_array( $type, self::REDIRECT_TYPES, true ) ? $type : 301;
+	}
+
+	/**
+	 * Whether a target carries an unsafe scheme: a protocol-relative "//host"
+	 * (host smuggling) or any explicit scheme that is not http(s). Shared
+	 * open-redirect / XSS guard used when sanitising both exact and pattern targets.
+	 *
+	 * @param string $target Target string.
+	 * @return bool
+	 */
+	protected static function has_unsafe_scheme( $target ) {
+		if ( 0 === strpos( $target, '//' ) ) {
+			return true;
+		}
+		return (bool) preg_match( '#^[a-z][a-z0-9+.\-]*:#i', $target ) && ! preg_match( '#^https?://#i', $target );
+	}
+
+	/**
 	 * Register front-end hooks.
 	 *
 	 * @return void
@@ -57,10 +94,15 @@ class Link_Guardian_Redirects {
 		$parts       = wp_parse_url( $url_or_path );
 		$path        = isset( $parts['path'] ) ? $parts['path'] : '/';
 
-		// Strip the home path prefix on sub-directory installs.
+		// Strip the home path prefix on sub-directory installs (handling both the
+		// "/blog/" and the no-trailing-slash "/blog" forms of the subdir root).
 		$home_path = wp_parse_url( home_url( '/' ), PHP_URL_PATH );
-		if ( $home_path && '/' !== $home_path && 0 === strpos( $path, $home_path ) ) {
-			$path = substr( $path, strlen( $home_path ) - 1 );
+		if ( $home_path && '/' !== $home_path ) {
+			if ( rtrim( $home_path, '/' ) === $path ) {
+				$path = '/';
+			} elseif ( 0 === strpos( $path, $home_path ) ) {
+				$path = substr( $path, strlen( $home_path ) - 1 );
+			}
 		}
 
 		$path = rawurldecode( $path );
@@ -97,24 +139,14 @@ class Link_Guardian_Redirects {
 	 */
 	public static function sanitize_target( $target ) {
 		$target = trim( (string) $target );
-		if ( '' === $target ) {
+		if ( '' === $target || self::has_unsafe_scheme( $target ) ) {
 			return '';
 		}
 
-		// Protocol-relative URLs could smuggle an arbitrary host: reject.
-		if ( 0 === strpos( $target, '//' ) ) {
-			return '';
-		}
-
-		// Anything carrying an explicit scheme must be http(s).
-		if ( preg_match( '#^[a-z][a-z0-9+.\-]*:#i', $target ) ) {
-			if ( ! preg_match( '#^https?://#i', $target ) ) {
-				return '';
-			}
+		// An explicit http(s) URL is kept; anything else is treated as a path.
+		if ( preg_match( '#^https?://#i', $target ) ) {
 			return esc_url_raw( $target, array( 'http', 'https' ) );
 		}
-
-		// Otherwise treat it as a path and normalise the leading slash.
 		return '/' . ltrim( $target, '/' );
 	}
 
@@ -161,7 +193,9 @@ class Link_Guardian_Redirects {
 			$target = self::sanitize_pattern_target( $args['target_url'] );
 		}
 
-		if ( '' === $source || '' === $target ) {
+		// Reject empties, and exact sources too long for the indexed column
+		// (pattern sources are already capped in normalize_pattern_source()).
+		if ( '' === $source || '' === $target || ( 'exact' === $match_type && strlen( $source ) > self::MAX_SOURCE_LEN ) ) {
 			return false;
 		}
 
@@ -175,7 +209,7 @@ class Link_Guardian_Redirects {
 			return false;
 		}
 
-		$type = in_array( (int) $args['redirect_type'], array( 301, 302, 307, 308 ), true ) ? (int) $args['redirect_type'] : 301;
+		$type = self::normalize_type( $args['redirect_type'] );
 
 		// Find the existing row to update. Exact rules look up by normalised path;
 		// pattern rules are stored verbatim, so they must look up by literal source
@@ -244,7 +278,7 @@ class Link_Guardian_Redirects {
 		// Reject (rather than silently truncate) anything that would not fit the
 		// indexed source_path column, so an over-long pattern fails predictably.
 		$result = ( 'wildcard' === $match_type ) ? '/' . ltrim( $source, '/' ) : $source;
-		return ( strlen( $result ) > 190 ) ? '' : $result;
+		return ( strlen( $result ) > self::MAX_SOURCE_LEN ) ? '' : $result;
 	}
 
 	/**
@@ -256,13 +290,10 @@ class Link_Guardian_Redirects {
 	 */
 	public static function sanitize_pattern_target( $target ) {
 		$target = trim( (string) $target );
-		if ( '' === $target || 0 === strpos( $target, '//' ) ) {
+		if ( '' === $target || self::has_unsafe_scheme( $target ) ) {
 			return '';
 		}
-		if ( preg_match( '#^[a-z][a-z0-9+.\-]*:#i', $target ) && ! preg_match( '#^https?://#i', $target ) ) {
-			return '';
-		}
-		return $target;
+		return $target; // Verbatim, to preserve $1/$2 capture refs.
 	}
 
 	/**
@@ -298,7 +329,7 @@ class Link_Guardian_Redirects {
 	 */
 	public static function compile_pattern( $source, $match_type ) {
 		$source = (string) $source;
-		if ( '' === $source || strlen( $source ) > 190 ) {
+		if ( '' === $source || strlen( $source ) > self::MAX_SOURCE_LEN ) {
 			return null;
 		}
 		if ( 'wildcard' === $match_type ) {
@@ -399,7 +430,7 @@ class Link_Guardian_Redirects {
 
 			return array(
 				'target'   => $absolute,
-				'type'     => in_array( (int) $rule->redirect_type, array( 301, 302, 307, 308 ), true ) ? (int) $rule->redirect_type : 301,
+				'type'     => self::normalize_type( $rule->redirect_type ),
 				'first_id' => (int) $rule->id,
 			);
 		}
@@ -438,7 +469,7 @@ class Link_Guardian_Redirects {
 
 			if ( null === $first ) {
 				$first = array(
-					'type' => in_array( $type, array( 301, 302, 307, 308 ), true ) ? $type : 301,
+					'type' => self::normalize_type( $type ),
 					'id'   => $id,
 				);
 			}
@@ -673,7 +704,7 @@ class Link_Guardian_Redirects {
 			return false;
 		}
 
-		$type    = in_array( (int) $type, array( 301, 302, 307, 308 ), true ) ? (int) $type : 301;
+		$type    = self::normalize_type( $type );
 		$data    = array(
 			'target_url'    => $target,
 			'redirect_type' => $type,
@@ -790,6 +821,16 @@ class Link_Guardian_Redirects {
 			return;
 		}
 
+		$target = $resolved['target'];
+
+		// Carry the incoming query string over when the target has none of its
+		// own (so /old?utm=x -> /new becomes /new?utm=x). wp_redirect() strips
+		// any CR/LF, so this cannot be used for header injection.
+		$query = (string) wp_parse_url( $request, PHP_URL_QUERY );
+		if ( '' !== $query && false === strpos( $target, '?' ) ) {
+			$target .= '?' . $query;
+		}
+
 		$this->increment_hit( $resolved['first_id'] );
 
 		// wp_redirect (not wp_safe_redirect): admins may intentionally point a
@@ -797,7 +838,7 @@ class Link_Guardian_Redirects {
 		// can only resolve off-site to a host that is literal in the admin's
 		// template — match_pattern()'s open-redirect guard refuses any host that
 		// came from a visitor-supplied capture.
-		wp_redirect( $resolved['target'], $resolved['type'] ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect
+		wp_redirect( $target, $resolved['type'] ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect
 		exit;
 	}
 
@@ -840,7 +881,7 @@ class Link_Guardian_Redirects {
 		$out['matched']  = true;
 		$out['first_id'] = (int) $first->id;
 		$type            = (int) $first->redirect_type;
-		$out['type']     = in_array( $type, array( 301, 302, 307, 308 ), true ) ? $type : 301;
+		$out['type']     = self::normalize_type( $type );
 
 		$visited = array( $start_path => true );
 		$current = $first;

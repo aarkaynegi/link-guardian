@@ -17,6 +17,9 @@ All notable changes to **Link Guardian** are documented here. The format follows
 - **Redirect audit** REST API (`link-guardian/v1`): loops, multi-hop chains, connected links, dead-ends — plus an admin Audit screen.
 - **Multi-hop loop protection**: refuses `A→B→A` / `A→B→C→A` at save time; aborts loops at serve time via a visited-set guard.
 - Full-width, collapsible Add/Edit panel and an inline search row.
+- Query strings are preserved across redirects (`/old?utm=x` → `/new?utm=x`).
+- 307 / 308 (method-preserving) status codes selectable on manual redirects.
+- Accessibility: scanner/audit live regions use `role="status"`/`aria-live` + `role="progressbar"`; all admin JS strings are translatable.
 
 ### Security
 - **Open-redirect guard for pattern rules**: a pattern's redirect host can never be supplied by a visitor capture — off-site targets are only honoured when the host is literal in the rule's template.

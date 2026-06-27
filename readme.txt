@@ -47,7 +47,7 @@ Everything is available programmatically under `link-guardian/v1` (requires `man
 == Frequently Asked Questions ==
 
 = Does it slow down saving a post? =
-Link-rewriting runs on save and is capped (filterable via `link_guardian_rewrite_limit`, default 500 posts). For very large sites you can lower the cap or disable auto-rewrite in Settings.
+No. When you change a slug the redirect is created immediately, but the cross-content link rewriting is offloaded to a background cron job (processed in batches of 50 posts per pass until complete), so your save request is never slowed by it. You can also disable auto-rewrite entirely in Settings.
 
 = Will it redirect a URL that is live again? =
 No. When a slug is changed back to a previously-used value, Link Guardian removes any stale rule pointing away from that now-live URL, which also prevents rename-back loops.

@@ -19,7 +19,7 @@ Link Guardian does all three.
 | Feature | What it does |
 |---|---|
 | **Auto-redirect on slug change** | Hooks `post_updated`, detects slug/parent changes on published content, writes a 301 (configurable). |
-| **Auto internal-link rewrite** | Finds the old URL across all content and replaces it with the new URL (absolute + root-relative forms). Capped + filterable. |
+| **Auto internal-link rewrite** | Finds the old URL across all content and replaces it with the new URL (absolute + root-relative forms), offloaded to a background cron job in batches so saves stay fast. |
 | **Redirect manager** | List / add / **edit** / pause / delete redirects, with hit counters, search, and auto/manual + match-type badges. |
 | **Pattern redirects** | Wildcard (`/old/* → /new/*`) and regex (`$1`/`$2` capture refs), with per-pattern **exceptions** ("match all except…"). ReDoS-guarded (bounded backtrack/recursion limits, compile validation) and open-redirect-safe (a capture can never set the redirect host). |
 | **Broken-link scanner** | AJAX, batched scan of all published content for internal links that 404. One-click "create redirect" for any hit. |
@@ -76,10 +76,12 @@ Example `audit` response (abridged):
 
 ## Hooks for developers
 
-- `link_guardian_before_slug_change` ( $post_id, $old_url, $new_url )
-- `link_guardian_links_rewritten` ( $post_id, $rewritten_count )
-- `link_guardian_rewrite_limit` (filter, default `500`)
-- `link_guardian_scannable_post_types` (filter)
+- `link_guardian_before_slug_change` ( $post_id, $old_url, $new_url ) — action
+- `link_guardian_links_rewritten` ( $post_id, $rewritten_count ) — action
+- `link_guardian_can_rewrite_links` ( $can, $post_id ) — filter, gate cross-content rewriting
+- `link_guardian_scannable_post_types` ( $types ) — filter
+- `link_guardian_max_links_per_post` ( $max ) — filter, scanner
+- `link_guardian_probe_budget` ( $budget ) — filter, scanner HTTP probes per batch
 
 ## Requirements
 
