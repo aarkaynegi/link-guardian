@@ -1,14 +1,14 @@
 === Link Guardian ===
-Contributors: yourname
+Contributors: aarkaynegi
 Tags: redirects, broken links, internal links, slug, 301
 Requires at least: 6.2
-Tested up to: 6.5
+Tested up to: 7.0
 Requires PHP: 7.4
 Stable tag: 1.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Keeps your internal links healthy. Change a slug and Link Guardian creates the 301 redirect AND rewrites the old links inside your content — automatically.
+Change a slug and Link Guardian auto-creates the 301 redirect and rewrites the old internal links across your content. No more broken links.
 
 == Description ==
 
@@ -54,6 +54,12 @@ No. When a slug is changed back to a previously-used value, Link Guardian remove
 
 = Can it redirect off-site? =
 Yes — manual redirects may point to an external URL. Targets are sanitised on save.
+
+== Screenshots ==
+
+1. The Redirects manager — auto-created and manual redirects, with hit counts and one-click pause/delete.
+2. The broken-internal-link scanner, with a one-click "create redirect" for each broken link.
+3. The Redirect Audit — every loop, multi-hop chain, and connected link in one view (powered by the REST API).
 
 == Changelog ==
 

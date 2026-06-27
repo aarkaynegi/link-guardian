@@ -1,0 +1,17 @@
+# Files/dirs excluded from the distributed WordPress.org package (runtime only).
+/.git
+/.github
+/.gitignore
+/.editorconfig
+/.distignore
+/.wordpress-org
+/bin
+/build
+/composer.json
+/composer.lock
+/node_modules
+/phpcs.xml.dist
+/tests
+/vendor
+*.zip
+*.log

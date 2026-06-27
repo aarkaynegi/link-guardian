@@ -1,13 +1,13 @@
 <?php
 /**
  * Plugin Name:       Link Guardian
- * Plugin URI:        https://github.com/your-name/link-guardian
+ * Plugin URI:        https://github.com/aarkaynegi/link-guardian
  * Description:       Keeps your internal links healthy. When you change a post or page slug, Link Guardian automatically creates a 301 redirect <em>and</em> rewrites the old links inside your other content. It also scans your whole site for broken internal links.
  * Version:           1.0.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
- * Author:            Your Name
- * Author URI:        https://your-portfolio.example
+ * Author:            aarkaynegi
+ * Author URI:        https://github.com/aarkaynegi
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       link-guardian
